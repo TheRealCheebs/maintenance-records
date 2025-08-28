@@ -48,7 +48,7 @@ class RecordAdapter(
 
 class RecordDiffCallback : DiffUtil.ItemCallback<MaintenanceRecord>() {
     override fun areItemsTheSame(oldItem: MaintenanceRecord, newItem: MaintenanceRecord): Boolean {
-        return oldItem.id == newItem.id
+        return oldItem.itemId == newItem.itemId
     }
 
     override fun areContentsTheSame(oldItem: MaintenanceRecord, newItem: MaintenanceRecord): Boolean {

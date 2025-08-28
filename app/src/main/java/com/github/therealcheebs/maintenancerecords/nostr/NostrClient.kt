@@ -2,6 +2,10 @@ package com.github.therealcheebs.maintenancerecords.nostr
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,6 +15,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import com.squareup.moshi.Types
 import java.security.*
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
@@ -25,46 +30,246 @@ import javax.crypto.spec.SecretKeySpec
 import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecord
 import com.github.therealcheebs.maintenancerecords.data.TechnicianSignoff
 import com.github.therealcheebs.maintenancerecords.data.OwnershipTransfer
-import com.github.therealcheebs.maintenancerecords.data.NostrEvent
+import com.github.therealcheebs.maintenancerecords.data.KeyInfo
 
 object NostrClient {
     private lateinit var context: Context
     private lateinit var prefs: SharedPreferences
     private lateinit var keyPair: KeyPair
+    private lateinit var encryptedPrefs: SharedPreferences
     private val httpClient = OkHttpClient()
     private val activeWebSockets = ConcurrentHashMap<String, WebSocket>()
     private val eventSubscriptions = ConcurrentHashMap<String, (NostrEvent) -> Unit>()
 
+    private var currentKeyAlias: String? = null
     // Moshi instance for JSON serialization
     private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private val adapter = moshi.adapter(NostrEvent::class.java)
-    private val ownershipAdapter = moshi.adapter(OwnershipTransfer::class.java)
-    private val technicianAdapter = moshi.adapter(TechnicianSignoff::class.java)
-    private val maintenanceAdapter = moshi.adapter(MaintenanceRecord::class.java)
     private val messageAdapter = moshi.adapter(Map::class.java)
-
-    // Nostr event kinds
-    const val KIND_TEXT_NOTE = 1
-    const val KIND_RECOMMEND_RELAY = 2
-    const val KIND_CONTACTS = 3
-    const val KIND_ENCRYPTED_DIRECT_MESSAGE = 4
-    const val KIND_DELETE = 5
-    const val KIND_REACTION = 7
-    const val KIND_CHANNEL_CREATION = 40
-    const val KIND_CHANNEL_META = 41
-    const val KIND_CHANNEL_MESSAGE = 42
-    const val KIND_CHANNEL_HIDE_MESSAGE = 43
-    const val KIND_CHANNEL_MUTED_USER = 44
-
-    // Custom kinds for our maintenance app
-    const val KIND_MAINTENANCE_RECORD = 30000
-    const val KIND_OWNERSHIP_TRANSFER = 30001
-    const val KIND_TECHNICIAN_SIGNOFF = 30002
+    private val keyInfoListAdapter = moshi.adapter<List<KeyInfo>>(Types.newParameterizedType(List::class.java, KeyInfo::class.java))
 
     fun initialize(appContext: Context) {
         context = appContext
         prefs = context.getSharedPreferences("nostr_prefs", Context.MODE_PRIVATE)
-        initializeKeyPair()
+        setupEncryptedStorage()
+        loadCurrentKeyFromStorage()
+        //initializeKeyPair()
+    }
+        
+    private fun setupEncryptedStorage() {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+
+        encryptedPrefs = EncryptedSharedPreferences.create(
+            context,
+            "nostr_encrypted_prefs",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+    
+    private fun loadCurrentKeyFromStorage() {
+        currentKeyAlias = encryptedPrefs.getString("last_used_key", null)
+        
+        // If no key is set but we have keys, use the first one
+        if (currentKeyAlias == null) {
+            val allKeys = getAllKeys()
+            if (allKeys.isNotEmpty()) {
+                val defaultKey = allKeys.find { it.isDefault }
+                currentKeyAlias = defaultKey?.alias ?: allKeys.first().alias
+                saveCurrentKeyToStorage()
+            }
+        }
+    }
+    
+    private fun saveCurrentKeyToStorage() {
+        currentKeyAlias?.let { alias ->
+            encryptedPrefs.edit()
+                .putString("last_used_key", alias)
+                .apply()
+        }
+    }
+
+    // Key management methods
+    suspend fun generateNewKey(name: String = "Key ${System.currentTimeMillis()}"): String = 
+        withContext(Dispatchers.IO) {
+            val keyGen = KeyPairGenerator.getInstance("EC")
+            keyGen.initialize(256)
+            val keyPair = keyGen.generateKeyPair()
+            
+            val alias = "key_${System.currentTimeMillis()}"
+            val keyInfo = KeyInfo(
+                alias = alias,
+                name = name,
+                publicKey = encodePublicKey(keyPair.public),
+                privateKey = encodePrivateKey(keyPair.private),
+                createdAt = System.currentTimeMillis(),
+                isDefault = getAllKeys().isEmpty() // First key is default
+            )
+            
+            saveKeyInfo(keyInfo)
+            setCurrentKey(alias)
+            
+            alias
+        }
+
+    suspend fun importKey(
+        privateKey: String, 
+        name: String = "Imported Key"
+    ): String = withContext(Dispatchers.IO) {
+        try {
+            // Parse the private key and derive public key
+            val (publicKey, parsedPrivateKey) = parseAndValidateKey(privateKey)
+            
+            val alias = "imported_${System.currentTimeMillis()}"
+            val keyInfo = KeyInfo(
+                alias = alias,
+                name = name,
+                publicKey = publicKey,
+                privateKey = parsedPrivateKey,
+                createdAt = System.currentTimeMillis(),
+                isDefault = getAllKeys().isEmpty() // First key is default
+            )
+            
+            saveKeyInfo(keyInfo)
+            setCurrentKey(alias)
+            
+            alias
+        } catch (e: Exception) {
+            throw Exception("Failed to import key: ${e.message}")
+        }
+    }
+
+    private fun parseAndValidateKey(keyInput: String): Pair<String, String> {
+        return when {
+            // nsec format (private key)
+            keyInput.startsWith("nsec1") -> {
+                val privateKey = decodeBech32(keyInput)
+                val publicKey = derivePublicKeyFromPrivate(privateKey)
+                Pair(publicKey, privateKey)
+            }
+            // ncryptsec format (encrypted private key)
+            keyInput.startsWith("ncryptsec1") -> {
+                throw Exception("Encrypted private keys (ncryptsec) are not supported yet")
+            }
+            // Hex format (private key)
+            keyInput.matches(Regex("^[a-fA-F0-9]{64}$")) -> {
+                val publicKey = derivePublicKeyFromPrivate(keyInput)
+                Pair(publicKey, keyInput)
+            }
+            // npub format (public key) - we need the private key
+            keyInput.startsWith("npub1") -> {
+                throw Exception("You provided a public key (npub). Please provide a private key (nsec or hex).")
+            }
+            else -> {
+                throw Exception("Invalid key format. Please provide a valid Nostr private key.")
+            }
+        }
+    }
+
+    fun setCurrentKey(alias: String) {
+        currentKeyAlias = alias
+        saveCurrentKeyToStorage()
+    }
+
+    fun getCurrentKeyAlias(): String? = currentKeyAlias
+
+    fun hasAnyKeys(): Boolean {
+        return getAllKeys().isNotEmpty()
+    }
+
+    fun needsKeySetup(): Boolean {
+        return !hasAnyKeys()
+    }
+
+    fun getAllKeyAliases(): List<String> {
+        val keysJson = encryptedPrefs.getString("saved_keys", "[]")
+        return try {
+            val keyList = keyInfoListAdapter.fromJson(keysJson) ?: emptyList()
+            keyList.map { it.alias }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun getAllKeys(): List<KeyInfo> {
+        val keysJson = encryptedPrefs.getString("saved_keys", "[]")
+        return try {
+            keyInfoListAdapter.fromJson(keysJson) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun getKeyInfo(alias: String): KeyInfo? {
+        val keys = getAllKeys()
+        return keys.find { it.alias == alias }
+    }
+
+    fun getCurrentKeyInfo(): KeyInfo? {
+        return currentKeyAlias?.let { getKeyInfo(it) }
+    }
+
+    private fun saveKeyInfo(keyInfo: KeyInfo) {
+        val existingKeys = getAllKeys().toMutableList()
+        
+        // Remove if key with same alias exists
+        existingKeys.removeAll { it.alias == keyInfo.alias }
+        
+        // Add the new key
+        existingKeys.add(keyInfo)
+        
+        // Save back to preferences
+        val keysJson = keyInfoListAdapter.toJson(existingKeys)
+        
+        encryptedPrefs.edit()
+            .putString("saved_keys", keysJson)
+            .apply()
+    }
+
+    fun deleteKey(alias: String) {
+        val existingKeys = getAllKeys().toMutableList()
+        existingKeys.removeAll { it.alias == alias }
+        
+        val keysJson = keyInfoListAdapter.toJson(existingKeys)
+        
+        encryptedPrefs.edit()
+            .putString("saved_keys", keysJson)
+            .apply()
+        
+        // If we deleted the current key, switch to another one
+        if (currentKeyAlias == alias) {
+            val remainingKeys = getAllKeyAliases()
+            if (remainingKeys.isNotEmpty()) {
+                setCurrentKey(remainingKeys.first())
+            } else {
+                currentKeyAlias = null
+                // Clear the saved key since there are no keys left
+                encryptedPrefs.edit()
+                    .remove("last_used_key")
+                    .apply()
+            }
+        }
+    }
+
+    fun renameKey(alias: String, newName: String) {
+        val keyInfo = getKeyInfo(alias)
+        keyInfo?.let {
+            val updatedKey = it.copy(name = newName)
+            saveKeyInfo(updatedKey)
+        }
+    }
+
+    fun setDefaultKey(alias: String) {
+        val keys = getAllKeys().toMutableList()
+        val updatedKeys = keys.map { it.copy(isDefault = (it.alias == alias)) }
+        val keysJson = keyInfoListAdapter.toJson(updatedKeys)
+        
+        encryptedPrefs.edit()
+            .putString("saved_keys", keysJson)
+            .apply()
     }
 
     private fun initializeKeyPair() {
@@ -91,6 +296,7 @@ object NostrClient {
         }
     }
 
+    
     // Key encoding/decoding methods
     private fun encodePublicKey(publicKey: PublicKey): String {
         return Base64.encodeToString(publicKey.encoded, Base64.NO_WRAP)
@@ -112,6 +318,27 @@ object NostrClient {
         return KeyFactory.getInstance("EC").generatePrivate(spec)
     }
 
+    // Bech32 decoding (simplified - use a proper library in production)
+    private fun decodeBech32(bech32: String): String {
+        if (bech32.startsWith("nsec1")) {
+            val data = bech32.substring(5).dropLast(6)
+            return convertBech32ToHex(data)
+        }
+        throw Exception("Invalid bech32 format")
+    }
+
+    private fun convertBech32ToHex(data: String): String {
+        // This is a placeholder implementation
+        // In production, use a proper bech32 library
+        return data.map { it.code }.joinToString("") { it.toString(16).padStart(2, '0') }
+    }
+
+    private fun derivePublicKeyFromPrivate(privateKey: String): String {
+        // This should be implemented properly using cryptographic operations
+        // For now, return a placeholder
+        return "placeholder_public_key"
+    }
+
     fun getPublicKey(): String {
         return encodePublicKey(keyPair.public)
     }
@@ -121,42 +348,16 @@ object NostrClient {
     }
 
     // Event creation and signing
-    suspend fun createMaintenanceRecord(record: MaintenanceRecord): NostrEvent = withContext(Dispatchers.IO) {
-        val content = maintenanceAdapter.toJson(record)
-        signEvent(createEvent(KIND_MAINTENANCE_RECORD, content, listOf(listOf("d", record.id))))
+    suspend fun signMaintenanceRecord(record: MaintenanceRecord): NostrEvent = withContext(Dispatchers.IO) {
+        signEvent(record.toNostrEvent())
     }
 
-    suspend fun createOwnershipTransfer(
-        itemId: String,
-        newOwnerPubkey: String
-    ): NostrEvent = withContext(Dispatchers.IO) {
-        val contentObj = OwnershipTransfer(
-            id = UUID.randomUUID().toString(),
-            itemId = itemId,
-            previousOwner = getPublicKey(),
-            newOwner = newOwnerPubkey,
-            createdAt = System.currentTimeMillis() / 1000,
-            signature = null // will be set after signing
-        )
-        
-        val content = ownershipAdapter.toJson(contentObj)
-        signEvent(createEvent(KIND_OWNERSHIP_TRANSFER, content, listOf(listOf("d", itemId))))
+    suspend fun signOwnershipTransfer(transfer: OwnershipTransfer): NostrEvent = withContext(Dispatchers.IO) {
+        signEvent(transfer.toNostrEvent())
     }
 
-    suspend fun createTechnicianSignoff(
-        recordId: String,
-        notes: String = ""
-    ): NostrEvent = withContext(Dispatchers.IO) {
-        val contentObj = TechnicianSignoff(
-            itemId = UUID.randomUUID().toString(),
-            recordId = recordId,
-            technician = getPublicKey(),
-            notes = notes,
-            createdAt = System.currentTimeMillis() / 1000,
-            signature = null // will be set after signing
-        )
-        val content = technicianAdapter.toJson(contentObj)
-        signEvent(createEvent(KIND_TECHNICIAN_SIGNOFF, content, listOf(listOf("e", recordId))))
+    suspend fun signTechnicianSignoff(techSignoff: TechnicianSignoff): NostrEvent = withContext(Dispatchers.IO) {
+        signEvent(techSignoff.toNostrEvent())
     }
 
     private fun createEvent(
@@ -165,24 +366,24 @@ object NostrClient {
         tags: List<List<String>> = emptyList()
     ): NostrEvent {
         return NostrEvent(
-            id = null, // will be set after signing
+            id = "", // will be set after signing
             pubkey = getPublicKey(),
             createdAt = System.currentTimeMillis() / 1000,
             kind = kind,
             tags = tags,
             content = content,
-            signature = null // will be set after signing
+            sig = "" // will be set after signing
         )
     }
 
     private fun signEvent(event: NostrEvent): NostrEvent {
         // Create a copy without id and sig for eventId generation
-        val eventForId = event.copy(id = null, signature = null)
+        val eventForId = event.copy(id = "", sig = "")
         val serialized = adapter.toJson(eventForId)
         val eventId = generateEventId(serialized)
         val signature = sign(eventId, keyPair.private)
         // Return a new NostrEvent with id and sig set
-        return event.copy(id = eventId, signature = signature)
+        return event.copy(id = eventId, sig = signature)
     }
 
     private fun generateEventId(serialized: String): String {
@@ -201,12 +402,12 @@ object NostrClient {
     // Event verification
     fun verifyEvent(event: NostrEvent): Boolean {
         return try {
-            val eventId = event.id ?: return false
+            val eventId = event.id
             val publicKey = event.pubkey
-            val signature = event.signature ?: return false
+            val signature = event.sig
 
             // Recreate event ID without signature
-            val eventForId = event.copy(id = null, signature = null)
+            val eventForId = event.copy(id = "", sig = "")
             val serialized = adapter.toJson(eventForId)
             val recreatedId = generateEventId(serialized)
 
@@ -255,7 +456,7 @@ object NostrClient {
         val subscriptionId = "pub-${System.currentTimeMillis()}"
         eventSubscriptions[subscriptionId] = { nostrEvent ->
             // You may need to adjust this logic based on your relay response format
-            if (nostrEvent.kind == KIND_MAINTENANCE_RECORD) { // Example check
+            if (nostrEvent.kind == NostrEvent.KIND_MAINTENANCE_RECORD) { // Example check
                 future.complete(true)
                 eventSubscriptions.remove(subscriptionId)
             }

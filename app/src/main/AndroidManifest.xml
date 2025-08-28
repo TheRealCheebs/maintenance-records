@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <application
         android:name=".MaintenanceRecordsApp"
@@ -42,5 +43,10 @@
             android:name=".ui.NostrVerifyActivity"
             android:label="Nostr Verification"
             android:parentActivityName=".RecordDetailActivity" />
+            
+        <activity
+            android:name=".ui.NostrKeyManagerActivity"
+            android:label="Key Management"
+            android:parentActivityName=".MainActivity" />
     </application>
 </manifest>

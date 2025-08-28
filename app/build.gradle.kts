@@ -48,6 +48,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.2")
     implementation("androidx.navigation:navigation-fragment-ktx:2.9.3")
     implementation("androidx.navigation:navigation-ui-ktx:2.9.3")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
 
     // Nostr libraries
 
@@ -65,6 +67,9 @@ dependencies {
 
     // Networking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Security
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

@@ -6,65 +6,142 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.github.therealcheebs.maintenancerecords.databinding.ActivityMainBinding
 import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecord
+import com.github.therealcheebs.maintenancerecords.data.KeyInfo
+import com.github.therealcheebs.maintenancerecords.nostr.NostrClient
+import com.github.therealcheebs.maintenancerecords.R
+import kotlinx.coroutines.launch
+import android.widget.Toast
+import java.util.Date
+
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: RecordAdapter
-
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
+        
+        // Check if we need to set up keys
+        if (NostrClient.needsKeySetup()) {
+            // Redirect to key manager
+            val intent = Intent(this, NostrKeyManagerActivity::class.java)
+            intent.putExtra("first_time", true)
+            startActivity(intent)
+            finish()
+            return
+        }
+        
+        // Show key selection dialog if multiple keys exist
+        if (NostrClient.getAllKeys().size > 1) {
+            showKeySelectionDialog()
+        }
+        
         setupRecyclerView()
         setupClickListeners()
     }
-
+    
+    private fun showKeySelectionDialog() {
+        val dialog = KeySelectionDialog()
+        dialog.setOnKeySelected { keyInfo ->
+            NostrClient.setCurrentKey(keyInfo.alias)
+            Toast.makeText(this, "Using key: ${keyInfo.name}", Toast.LENGTH_SHORT).show()
+        }
+        
+        dialog.setOnManageKeys {
+            val intent = Intent(this, NostrKeyManagerActivity::class.java)
+            startActivity(intent)
+        }
+        
+        dialog.show(supportFragmentManager, "KeySelectionDialog")
+    }
+    
     private fun setupRecyclerView() {
         adapter = RecordAdapter { record ->
             val intent = Intent(this, RecordDetailActivity::class.java).apply {
-                putExtra("RECORD_ID", record.id)
+                putExtra("RECORD_ID", record.itemId)
             }
             startActivity(intent)
         }
-
+        
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = this@MainActivity.adapter
         }
-
-        // Load sample data (replace with actual data loading)
+        
+        // TODO: do it with the build config
         loadSampleData()
+        //if (BuildConfig.DEBUG) {
+        //    loadSampleData()
+        //} else {
+        //    // Load real data here
+        //}
     }
-
+    
     private fun setupClickListeners() {
         binding.fab.setOnClickListener {
             startActivity(Intent(this, CreateRecordActivity::class.java))
         }
+        
+        // Add menu option for key management
+        binding.toolbar.setOnMenuItemClickListener { menuItem ->
+            when (menuItem.itemId) {
+                R.id.action_key_manager -> {
+                    startActivity(Intent(this, NostrKeyManagerActivity::class.java))
+                    true
+                }
+                R.id.action_select_key -> {
+                    showKeySelectionDialog()
+                    true
+                }
+                else -> false
+            }
+        }
     }
-
+    
     private fun loadSampleData() {
         val sampleRecords = listOf(
             MaintenanceRecord(
-                id = "rec_001",
+                localId = 1L,
+                createdAt = 1693500000000, // Example date
+                updatedAt = 1693503600000,
                 itemId = "vehicle_001",
-                description = "Oil change",
+                description = "Oil change and filter replacement",
                 technician = "Quick Lube",
                 cost = 75.00,
-                createdAt = System.currentTimeMillis() / 1000 - 86400,
-                verified = false
+                datePerformed = 1693496400000,
+                mileage = 12000L,
+                notes = "Used synthetic oil",
+                nostrEventId = "event_abc123",
+                verified = true,
+                technicianSignoffEventId = "signoff_xyz789",
+                currentOwnerPubkey = "npub1ownerpubkeyabc",
+                previousOwnerPubkey = "npub1prevownerpubkeyxyz",
+                isDeleted = false,
+                isEncrypted = false
             ),
             MaintenanceRecord(
-                id = "rec_002",
-                itemId = "vehicle_001",
-                description = "Tire rotation",
+                localId = 2L,
+                createdAt = 1693586400000, // Example date
+                updatedAt = 1693590000000,
+                itemId = "vehicle_002",
+                description = "Tire rotation and balance",
                 technician = "Tire Shop",
                 cost = 50.00,
-                createdAt = System.currentTimeMillis() / 1000 - 172800,
-                verified = true
+                datePerformed = 1693582800000,
+                mileage = 15000L,
+                notes = "Front tires to back",
+                nostrEventId = "event_def456",
+                verified = false,
+                technicianSignoffEventId = null,
+                currentOwnerPubkey = "npub1ownerpubkeydef",
+                previousOwnerPubkey = null,
+                isDeleted = false,
+                isEncrypted = false
             )
         )
-
+        
         adapter.submitList(sampleRecords)
     }
 }
