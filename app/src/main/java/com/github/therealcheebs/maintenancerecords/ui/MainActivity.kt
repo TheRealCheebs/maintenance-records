@@ -81,7 +81,21 @@ class MainActivity : AppCompatActivity() {
     
     private fun setupClickListeners() {
         binding.fab.setOnClickListener {
-            startActivity(Intent(this, CreateRecordActivity::class.java))
+            val bottomSheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+            val sheetView = layoutInflater.inflate(R.layout.bottom_sheet_fab_menu, null)
+            bottomSheet.setContentView(sheetView)
+
+            sheetView.findViewById<android.widget.TextView>(R.id.menu_create_record).setOnClickListener {
+                bottomSheet.dismiss()
+                startActivity(Intent(this, CreateRecordActivity::class.java))
+            }
+            sheetView.findViewById<android.widget.TextView>(R.id.menu_ownership_transfer).setOnClickListener {
+                bottomSheet.dismiss()
+                // TODO: Replace with your OwnershipTransferActivity or logic
+                Toast.makeText(this, "Ownership Transfer selected", Toast.LENGTH_SHORT).show()
+            }
+
+            bottomSheet.show()
         }
         
         // Add menu option for key management

@@ -102,15 +102,29 @@ class NostrKeyManagerActivity : AppCompatActivity() {
     }
 
     private fun generateNewKey() {
-        lifecycleScope.launch {
-            try {
-                val alias = NostrClient.generateNewKey()
-                loadKeys()
-                Toast.makeText(this@NostrKeyManagerActivity, "New key generated successfully", Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                Toast.makeText(this@NostrKeyManagerActivity, "Failed to generate key: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
+        val editText = android.widget.EditText(this).apply {
+            hint = "Enter nickname for new key"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
+            setLines(1)
         }
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("New Key Nickname")
+            .setView(editText)
+            .setPositiveButton("Create") { _, _ ->
+                val nickname = editText.text.toString().trim().ifBlank { "Key ${System.currentTimeMillis()}" }
+                lifecycleScope.launch {
+                    try {
+                        val alias = NostrClient.generateNewKey(nickname)
+                        loadKeys()
+                        Toast.makeText(this@NostrKeyManagerActivity, "New key generated successfully", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(this@NostrKeyManagerActivity, "Failed to generate key: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun selectKey(keyInfo: KeyInfo) {

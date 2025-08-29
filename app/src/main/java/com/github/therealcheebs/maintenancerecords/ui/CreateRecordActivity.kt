@@ -78,7 +78,12 @@ class CreateRecordActivity : AppCompatActivity() {
         binding.btnSave.setOnClickListener {
             saveRecord()
         }
-        
+
+        // Connect header back button
+        binding.buttonBack.setOnClickListener {
+            finish()
+        }
+
         // Add a cancel button in the action bar
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
     }
