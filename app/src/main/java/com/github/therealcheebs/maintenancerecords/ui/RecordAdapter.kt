@@ -36,7 +36,7 @@ class RecordAdapter(
             binding.textItem.text = record.itemId
             binding.textDescription.text = record.description
             // Use createdAt (seconds) to display date with year
-            val date = Date(record.createdAt * 1000L)
+            val date = Date(record.createdAt)
             binding.textDate.text = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(date)
 
             binding.root.setOnClickListener {
