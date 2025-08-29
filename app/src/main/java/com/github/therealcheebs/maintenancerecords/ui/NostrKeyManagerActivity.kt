@@ -79,6 +79,15 @@ class NostrKeyManagerActivity : AppCompatActivity() {
             finish()
         }
 
+        binding.buttonCopyPublicKey.setOnClickListener {
+            val currentKey = NostrClient.getCurrentKeyInfo()
+            if (currentKey != null) {
+                copyToClipboard(currentKey.publicKey, "Public key")
+            } else {
+                Toast.makeText(this, "No public key to copy", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         // Check if this is first-time setup
         if (intent.getBooleanExtra("first_time", false)) {
             binding.textViewTitle.text = "Welcome! Set up your Nostr key"
@@ -90,6 +99,36 @@ class NostrKeyManagerActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val keys = NostrClient.getAllKeys()
             keyAdapter.submitList(keys)
+
+            val currentKey = NostrClient.getCurrentKeyInfo()
+            if (currentKey != null) {
+                binding.textViewTitle.text = currentKey.name
+                binding.textViewTitle.isClickable = true
+                binding.textViewTitle.setOnClickListener {
+                    val editText = android.widget.EditText(this@NostrKeyManagerActivity).apply {
+                        setText(currentKey.name)
+                        setSelection(text.length)
+                    }
+                    androidx.appcompat.app.AlertDialog.Builder(this@NostrKeyManagerActivity)
+                        .setTitle("Edit Key Nickname")
+                        .setView(editText)
+                        .setPositiveButton("Save") { _, _ ->
+                            val newName = editText.text.toString().trim()
+                            if (newName.isNotBlank()) {
+                                NostrClient.renameKey(currentKey.alias, newName)
+                                loadKeys()
+                                Toast.makeText(this@NostrKeyManagerActivity, "Key nickname updated", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+                binding.textViewPublicKey.text = currentKey.publicKey
+            } else {
+                binding.textViewTitle.text = "No key selected"
+                binding.textViewTitle.isClickable = false
+                binding.textViewPublicKey.text = "No public key"
+            }
 
             if (keys.isEmpty()) {
                 binding.layoutNoKeys.visibility = android.view.View.VISIBLE
