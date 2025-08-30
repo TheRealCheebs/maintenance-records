@@ -6,10 +6,12 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.github.therealcheebs.maintenancerecords.databinding.ActivityMainBinding
 import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecord
+import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecordDatabase
 import com.github.therealcheebs.maintenancerecords.data.KeyInfo
 import com.github.therealcheebs.maintenancerecords.nostr.NostrClient
 import com.github.therealcheebs.maintenancerecords.R
 import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
 import android.widget.Toast
 import java.util.Date
 
@@ -22,7 +24,11 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        
+
+        // Show active key alias/name at the top
+        val keyInfo = NostrClient.getCurrentKeyInfo()
+        val aliasOrName = keyInfo?.name ?: "Unknown Key"
+
         // Check if we need to set up keys
         if (NostrClient.needsKeySetup()) {
             // Redirect to key manager
@@ -32,12 +38,12 @@ class MainActivity : AppCompatActivity() {
             finish()
             return
         }
-        
+
         // Show key selection dialog if multiple keys exist
         if (NostrClient.getAllKeys().size > 1) {
             showKeySelectionDialog()
         }
-        
+
         setupRecyclerView()
         setupClickListeners()
     }
@@ -47,6 +53,7 @@ class MainActivity : AppCompatActivity() {
         dialog.setOnKeySelected { keyInfo ->
             NostrClient.setCurrentKey(keyInfo.alias)
             Toast.makeText(this, "Using key: ${keyInfo.name}", Toast.LENGTH_SHORT).show()
+            loadRecordsForCurrentKey()
         }
         
         dialog.setOnManageKeys {
@@ -69,14 +76,6 @@ class MainActivity : AppCompatActivity() {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = this@MainActivity.adapter
         }
-        
-        // TODO: do it with the build config
-        loadSampleData()
-        //if (BuildConfig.DEBUG) {
-        //    loadSampleData()
-        //} else {
-        //    // Load real data here
-        //}
     }
     
     private fun setupClickListeners() {
@@ -157,5 +156,42 @@ class MainActivity : AppCompatActivity() {
         )
         
         adapter.submitList(sampleRecords)
+    }
+    
+    private fun loadRecordsForCurrentKey() {
+        val currentKey = NostrClient.getCurrentKeyInfo()
+        if (currentKey == null) {
+            Toast.makeText(this, "No active key found. Please set up a key.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val currentPubkey = currentKey.publicKey
+        val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
+        lifecycleScope.launch {
+            val records = db.maintenanceRecordDao().getRecordsByOwner(currentPubkey)
+            adapter.submitList(records)
+            if (records.isEmpty()) {
+                runOnUiThread {
+                    android.app.AlertDialog.Builder(this@MainActivity)
+                        .setTitle("No Records Found")
+                        .setMessage("There is no record activity for this key.")
+                        .setPositiveButton("OK", null)
+                        .setNegativeButton("Import Records") { _, _ ->
+                            lifecycleScope.launch {
+                                try {
+                                    val nostrRecords = NostrClient.fetchRecordsForKey(currentPubkey)
+                                    val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
+                                    nostrRecords.forEach { db.maintenanceRecordDao().insert(it) }
+                                    val updatedRecords = db.maintenanceRecordDao().getRecordsByOwner(currentPubkey)
+                                    adapter.submitList(updatedRecords)
+                                    Toast.makeText(this@MainActivity, "Records imported successfully", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(this@MainActivity, "Import failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                        .show()
+                }
+            }
+        }
     }
 }

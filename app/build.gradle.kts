@@ -1,7 +1,7 @@
 plugins {
-    id("com.android.application") version "8.12.1"
-    id("org.jetbrains.kotlin.android") version "1.9.10"
-    id("org.jetbrains.kotlin.kapt") version "2.2.10"
+    id("com.android.application") version "8.12.2"
+    id("org.jetbrains.kotlin.android") version "2.0.0"
+    id("org.jetbrains.kotlin.kapt") version "2.0.0"
 }
 
 android {
@@ -14,7 +14,6 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -52,22 +51,19 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
 
     // Nostr libraries
-
     // Cryptography
     implementation("org.bouncycastle:bcprov-jdk15on:1.70")
-
     // JSON
     implementation("com.squareup.moshi:moshi:1.15.2")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
 
-    // Room Database
-    implementation("androidx.room:room-runtime:2.6.1")
-    kapt("androidx.room:room-compiler:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
+    // Room Database - Updated to version compatible with Kotlin 2.0.0
+    implementation("androidx.room:room-runtime:2.7.0-alpha07")
+    kapt("androidx.room:room-compiler:2.7.0-alpha07")
+    implementation("androidx.room:room-ktx:2.7.0-alpha07")
 
     // Networking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-
     // Security
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
@@ -75,4 +71,14 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+
+    // kotlinx-metadata-jvm - already at correct version
+    implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")
+}
+
+// Force the correct version of kotlinx-metadata-jvm
+configurations.all {
+    resolutionStrategy {
+        force("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")
+    }
 }

@@ -504,6 +504,40 @@ object NostrClient {
         }
     }
 
+    /**
+     * Fetches all maintenance records for the given pubkey from Nostr relays.
+     */
+    suspend fun fetchRecordsForKey(pubkey: String): List<MaintenanceRecord> = withContext(Dispatchers.IO) {
+        val records = mutableListOf<MaintenanceRecord>()
+        val filter = mapOf(
+            "pubkey" to pubkey,
+            "kind" to NostrEvent.KIND_MAINTENANCE_RECORD
+        )
+        val relayUrls = getDefaultRelays()
+
+        val eventList = Collections.synchronizedList(mutableListOf<NostrEvent>())
+        val eventCallback: (NostrEvent) -> Unit = { event ->
+            eventList.add(event)
+        }
+
+        // Query relays for matching events
+        queryRelays(filter, relayUrls, eventCallback)
+
+        // Wait briefly for events to arrive (simple approach)
+        Thread.sleep(2000) // You may want a more robust async solution
+
+        // Parse events to MaintenanceRecord
+        eventList.forEach { event ->
+            try {
+                val record = MaintenanceRecord.fromNostrEvent(event, pubkey)
+                records.add(record)
+            } catch (e: Exception) {
+                // Skip malformed events
+            }
+        }
+        records
+    }
+
     private fun connectToRelay(relayUrl: String): WebSocket {
         return activeWebSockets.getOrPut(relayUrl) {
             val listener = object : WebSocketListener() {

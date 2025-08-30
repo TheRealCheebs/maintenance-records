@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.github.therealcheebs.maintenancerecords.databinding.ActivityCreateRecordBinding
+import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecordDatabase
 import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecord
 import com.github.therealcheebs.maintenancerecords.nostr.NostrClient
 import kotlinx.coroutines.launch
@@ -170,14 +171,13 @@ class CreateRecordActivity : AppCompatActivity() {
             try {
                 // Create Nostr event and publish
                 val event = NostrClient.signMaintenanceRecord(record)
-                
+
                 val success = NostrClient.publishToRelays(event)
                 if (success) {
-                    // Update the record with the event ID
-                    
-                    // Save to local database (you'll need to implement this)
-                    // database.insertRecord(updatedRecord)
-                    
+                    // Save to local Room database
+                    val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
+                    db.maintenanceRecordDao().insert(record)
+
                     Toast.makeText(this@CreateRecordActivity, "Record saved successfully", Toast.LENGTH_SHORT).show()
                     finish()
                 } else {

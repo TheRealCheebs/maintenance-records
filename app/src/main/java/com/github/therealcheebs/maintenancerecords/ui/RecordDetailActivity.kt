@@ -18,7 +18,7 @@ class RecordDetailActivity : AppCompatActivity() {
         binding = ActivityRecordDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        record = intent.getParcelableExtra("RECORD_ID") ?: run {
+        val recordId = intent.getStringExtra("RECORD_ID") ?: run {
             finish()
             return
         }
