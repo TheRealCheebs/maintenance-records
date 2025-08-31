@@ -1,0 +1,31 @@
+name: Custom Issue Form
+description: Create a custom issue with specific fields
+body:
+  - type: input
+    id: title
+    attributes:
+      label: Title
+      placeholder: Brief description of the issue
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Relay Management
+        - Note Storage
+        - Identity
+        - Publishing
+        - UI
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      placeholder: Detailed description
+    validations:
+      required: true
