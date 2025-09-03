@@ -168,6 +168,7 @@ class NostrKeyManagerActivity : AppCompatActivity() {
 
     private fun selectKey(keyInfo: KeyInfo) {
         NostrClient.setCurrentKey(keyInfo.alias)
+        NostrClient.loadKeyPairForCurrentKey()
         loadKeys()
         Toast.makeText(this, "Selected: ${keyInfo.name}", Toast.LENGTH_SHORT).show()
     }

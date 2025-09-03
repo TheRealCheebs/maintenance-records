@@ -56,6 +56,7 @@ dependencies {
     // JSON
     implementation("com.squareup.moshi:moshi:1.15.2")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
+    kapt("com.squareup.moshi:moshi-kotlin-codegen:1.15.2")
 
     // Room Database - Updated to version compatible with Kotlin 2.0.0
     implementation("androidx.room:room-runtime:2.7.0-alpha07")

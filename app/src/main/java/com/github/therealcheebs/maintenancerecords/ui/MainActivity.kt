@@ -7,6 +7,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.github.therealcheebs.maintenancerecords.databinding.ActivityMainBinding
 import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecord
 import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecordDatabase
+import com.github.therealcheebs.maintenancerecords.data.LocalNostrEventRepository
 import com.github.therealcheebs.maintenancerecords.data.KeyInfo
 import com.github.therealcheebs.maintenancerecords.nostr.NostrClient
 import com.github.therealcheebs.maintenancerecords.R
@@ -25,9 +26,13 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Show active key alias/name at the top
+        // Ensure NostrClient is initialized only once
+        NostrClient.initialize(applicationContext)
+
+        // Show active key alias/name at the top and in toolbar
         val keyInfo = NostrClient.getCurrentKeyInfo()
         val aliasOrName = keyInfo?.name ?: "Unknown Key"
+        binding.toolbar.title = "Maintenance Records - $aliasOrName"
 
         // Check if we need to set up keys
         if (NostrClient.needsKeySetup()) {
@@ -52,6 +57,7 @@ class MainActivity : AppCompatActivity() {
         val dialog = KeySelectionDialog()
         dialog.setOnKeySelected { keyInfo ->
             NostrClient.setCurrentKey(keyInfo.alias)
+            NostrClient.loadKeyPairForCurrentKey()
             Toast.makeText(this, "Using key: ${keyInfo.name}", Toast.LENGTH_SHORT).show()
             loadRecordsForCurrentKey()
         }
@@ -67,7 +73,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupRecyclerView() {
         adapter = RecordAdapter { record ->
             val intent = Intent(this, RecordDetailActivity::class.java).apply {
-                putExtra("RECORD_ID", record.itemId)
+                putExtra("RECORD_ID", record.id)
             }
             startActivity(intent)
         }
@@ -113,51 +119,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    private fun loadSampleData() {
-        val sampleRecords = listOf(
-            MaintenanceRecord(
-                localId = 1L,
-                createdAt = 1693500000000, // Example date
-                updatedAt = 1693503600000,
-                itemId = "vehicle_001",
-                description = "Oil change and filter replacement",
-                technician = "Quick Lube",
-                cost = 75.00,
-                datePerformed = 1693496400000,
-                mileage = 12000L,
-                notes = "Used synthetic oil",
-                nostrEventId = "event_abc123",
-                verified = true,
-                technicianSignoffEventId = "signoff_xyz789",
-                currentOwnerPubkey = "npub1ownerpubkeyabc",
-                previousOwnerPubkey = "npub1prevownerpubkeyxyz",
-                isDeleted = false,
-                isEncrypted = false
-            ),
-            MaintenanceRecord(
-                localId = 2L,
-                createdAt = 1693586400000, // Example date
-                updatedAt = 1693590000000,
-                itemId = "vehicle_002",
-                description = "Tire rotation and balance",
-                technician = "Tire Shop",
-                cost = 50.00,
-                datePerformed = 1693582800000,
-                mileage = 15000L,
-                notes = "Front tires to back",
-                nostrEventId = "event_def456",
-                verified = false,
-                technicianSignoffEventId = null,
-                currentOwnerPubkey = "npub1ownerpubkeydef",
-                previousOwnerPubkey = null,
-                isDeleted = false,
-                isEncrypted = false
-            )
-        )
-        
-        adapter.submitList(sampleRecords)
-    }
-    
     private fun loadRecordsForCurrentKey() {
         val currentKey = NostrClient.getCurrentKeyInfo()
         if (currentKey == null) {
@@ -166,32 +127,46 @@ class MainActivity : AppCompatActivity() {
         }
         val currentPubkey = currentKey.publicKey
         val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
+        val eventDao = db.localNostrEventDao()
+        val eventRepo = LocalNostrEventRepository(eventDao)
+        val emptyStateView = findViewById<android.view.View>(R.id.emptyStateView)
+        val emptyStateText = emptyStateView?.findViewById<android.widget.TextView>(R.id.emptyStateText)
+        val btnCreateRecord = findViewById<android.widget.Button>(R.id.btnCreateRecord)
+        val btnTransferOwnership = findViewById<android.widget.Button>(R.id.btnTransferOwnership)
+
         lifecycleScope.launch {
-            val records = db.maintenanceRecordDao().getRecordsByOwner(currentPubkey)
-            adapter.submitList(records)
-            if (records.isEmpty()) {
-                runOnUiThread {
-                    android.app.AlertDialog.Builder(this@MainActivity)
-                        .setTitle("No Records Found")
-                        .setMessage("There is no record activity for this key.")
-                        .setPositiveButton("OK", null)
-                        .setNegativeButton("Import Records") { _, _ ->
-                            lifecycleScope.launch {
-                                try {
-                                    val nostrRecords = NostrClient.fetchRecordsForKey(currentPubkey)
-                                    val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
-                                    nostrRecords.forEach { db.maintenanceRecordDao().insert(it) }
-                                    val updatedRecords = db.maintenanceRecordDao().getRecordsByOwner(currentPubkey)
-                                    adapter.submitList(updatedRecords)
-                                    Toast.makeText(this@MainActivity, "Records imported successfully", Toast.LENGTH_SHORT).show()
-                                } catch (e: Exception) {
-                                    Toast.makeText(this@MainActivity, "Import failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                                }
+            val events = eventRepo.getAllByPubkey(currentPubkey)
+            adapter.submitList(events)
+            if (events.isEmpty()) {
+                emptyStateText?.text = "No records found for ${currentKey.name}"
+                ImportRecordsDialogFragment(
+                    eventRepo = eventRepo,
+                    pubkey = currentPubkey,
+                    onRecordsImported = {
+                        lifecycleScope.launch {
+                            val updatedEvents = eventRepo.getAllByPubkey(currentPubkey)
+                            adapter.submitList(updatedEvents)
+                            if (updatedEvents.isEmpty()) {
+                                emptyStateView?.visibility = android.view.View.VISIBLE
+                                emptyStateText?.text = "No records found for ${currentKey.name}"
+                            } else {
+                                emptyStateView?.visibility = android.view.View.GONE
                             }
                         }
-                        .show()
-                }
+                    }
+                ).show(supportFragmentManager, "ImportRecordsDialogFragment")
+                emptyStateView?.visibility = android.view.View.VISIBLE
+            } else {
+                emptyStateView?.visibility = android.view.View.GONE
             }
+        }
+
+        btnCreateRecord?.setOnClickListener {
+            startActivity(Intent(this, CreateRecordActivity::class.java))
+        }
+        btnTransferOwnership?.setOnClickListener {
+            // TODO: Replace with your OwnershipTransferActivity or logic
+            Toast.makeText(this, "Transfer Ownership selected", Toast.LENGTH_SHORT).show()
         }
     }
 }

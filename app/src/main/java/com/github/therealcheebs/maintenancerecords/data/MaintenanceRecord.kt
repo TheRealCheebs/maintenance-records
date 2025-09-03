@@ -3,17 +3,10 @@ package com.github.therealcheebs.maintenancerecords.data
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 import com.github.therealcheebs.maintenancerecords.nostr.NostrEvent
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import java.util.Date
 
-@Entity
 @JsonClass(generateAdapter = true)
 data class MaintenanceRecord(
-    // Local database fields
-    @PrimaryKey(autoGenerate = true)
-    @Json(name = "local_id")
-    val localId: Long = 0L,
     @Json(name = "created_at") val createdAt: Long,
     @Json(name = "updated_at") val updatedAt: Long,
 

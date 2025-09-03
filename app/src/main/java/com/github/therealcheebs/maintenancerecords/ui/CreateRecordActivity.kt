@@ -5,10 +5,15 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.squareup.moshi.Moshi
 import com.github.therealcheebs.maintenancerecords.databinding.ActivityCreateRecordBinding
 import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecordDatabase
 import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecord
+import com.github.therealcheebs.maintenancerecords.data.LocalNostrEvent
+import com.github.therealcheebs.maintenancerecords.data.LocalNostrEventRepository
+import com.github.therealcheebs.maintenancerecords.data.NostrEventState
 import com.github.therealcheebs.maintenancerecords.nostr.NostrClient
+import com.github.therealcheebs.maintenancerecords.nostr.NostrEvent
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -145,12 +150,12 @@ class CreateRecordActivity : AppCompatActivity() {
         }
         
         // Get current user's public key
-        val currentOwnerPubkey = try {
-            NostrClient.getPublicKey()
-        } catch (e: Exception) {
+        val currentKey = NostrClient.getCurrentKeyInfo()
+        if (currentKey == null) {
             Toast.makeText(this, "Please set up your Nostr key first", Toast.LENGTH_SHORT).show()
             return
         }
+        val currentPubkey = currentKey.publicKey
         
         // Create MaintenanceRecord object
         val record = MaintenanceRecord(
@@ -161,7 +166,7 @@ class CreateRecordActivity : AppCompatActivity() {
             datePerformed = calendar.time.time / 1000L, // Store as Unix timestamp
             mileage = mileage,
             notes = notes,
-            currentOwnerPubkey = currentOwnerPubkey,
+            currentOwnerPubkey = currentPubkey,
             createdAt = System.currentTimeMillis() / 1000L, // Current time as Unix timestamp
             updatedAt = System.currentTimeMillis() / 1000L // Current time as Unix timestamp
         )
@@ -169,20 +174,41 @@ class CreateRecordActivity : AppCompatActivity() {
         // Save the record
         lifecycleScope.launch {
             try {
-                // Create Nostr event and publish
+                // Create Nostr event
                 val event = NostrClient.signMaintenanceRecord(record)
+                val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
+                val eventDao = db.localNostrEventDao()
+                val eventRepo = LocalNostrEventRepository(eventDao)
 
+                // Save event locally as Pending
+                val moshi = Moshi.Builder().build()
+                val adapter = moshi.adapter(NostrEvent::class.java)
+                val eventJson = adapter.toJson(event)
+
+                val localEvent = LocalNostrEvent(
+                    id = event.id,
+                    eventJson = eventJson,
+                    eventType = event.kind,
+                    createdAt = event.createdAt,
+                    updatedAt = event.createdAt,
+                    state = NostrEventState.Pending,
+                    pubkey = event.pubkey
+                )
+                eventRepo.insert(localEvent)
+
+                // Try to publish to relays
                 val success = NostrClient.publishToRelays(event)
-                if (success) {
-                    // Save to local Room database
-                    val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
-                    db.maintenanceRecordDao().insert(record)
+                // Update state based on publish result
+                val updatedState = if (success) NostrEventState.Published else NostrEventState.Failed
+                val updatedEvent = localEvent.copy(state = updatedState, updatedAt = System.currentTimeMillis() / 1000L)
+                eventRepo.update(updatedEvent)
 
-                    Toast.makeText(this@CreateRecordActivity, "Record saved successfully", Toast.LENGTH_SHORT).show()
-                    finish()
+                if (success) {
+                    Toast.makeText(this@CreateRecordActivity, "Record published and saved locally", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(this@CreateRecordActivity, "Failed to publish to Nostr", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@CreateRecordActivity, "Failed to publish to Nostr, saved locally", Toast.LENGTH_SHORT).show()
                 }
+                finish()
             } catch (e: Exception) {
                 Toast.makeText(this@CreateRecordActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
             }
