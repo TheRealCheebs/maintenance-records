@@ -14,6 +14,9 @@ interface LocalNostrEventDao {
     @Query("SELECT * FROM local_nostr_events WHERE pubkey = :pubkey ORDER BY createdAt DESC")
     suspend fun getAllByPubkey(pubkey: String): List<LocalNostrEvent>
 
+    @Query("SELECT * FROM local_nostr_events WHERE state IN (:states)")
+    suspend fun getAllWithStatus(states: List<String>): List<LocalNostrEvent>
+
     @Query("SELECT * FROM local_nostr_events WHERE id = :id")
     suspend fun getById(id: String): LocalNostrEvent
 

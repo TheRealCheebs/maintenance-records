@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:padding="16dp">
@@ -10,35 +12,13 @@
         android:orientation="vertical">
 
         <!-- Header -->
-        <LinearLayout
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:layout_marginBottom="24dp">
-
-            <ImageButton
-                android:id="@+id/buttonBack"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Back"
-                android:src="@drawable/ic_arrow_back" />
-
-            <TextView
-                android:id="@+id/headerTextView"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:text="Record Details"
-                android:textSize="20sp"
-                android:textStyle="bold" />
-
-            <View
-                android:layout_width="48dp"
-                android:layout_height="48dp" />
-        </LinearLayout>
+            android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorPrimary"
+            app:title="Your Title"
+            app:navigationIcon="@drawable/ic_arrow_back" />
 
         <TextView
             android:id="@+id/textItemId"
@@ -90,11 +70,11 @@
             android:text="Verify on Nostr" />
 
         <Button
-            android:id="@+id/buttonTransfer"
+            android:id="@+id/buttonPublish"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Transfer Ownership" />
+            android:text="Publish to Nostr" />
 
     </LinearLayout>
 

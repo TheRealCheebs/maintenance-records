@@ -9,6 +9,7 @@ import com.github.therealcheebs.maintenancerecords.databinding.DialogKeySelectio
 import com.github.therealcheebs.maintenancerecords.databinding.ItemKeySelectionBinding
 import com.github.therealcheebs.maintenancerecords.nostr.NostrClient
 import com.github.therealcheebs.maintenancerecords.data.KeyInfo
+import android.widget.Toast
 
 class KeySelectionDialog : DialogFragment() {
     
@@ -85,4 +86,22 @@ class KeySelectionDialog : DialogFragment() {
         super.onDestroyView()
         _binding = null
     }
+}
+
+fun showKeySelectionDialog(
+    activity: androidx.fragment.app.FragmentActivity,
+    onKeySelected: (KeyInfo) -> Unit,
+    onManageKeys: () -> Unit
+) {
+    val dialog = KeySelectionDialog()
+    dialog.setOnKeySelected { keyInfo ->
+        NostrClient.setCurrentKey(keyInfo.alias)
+        NostrClient.loadKeyPairForCurrentKey()
+        Toast.makeText(activity, "Using key: ${keyInfo.name}", Toast.LENGTH_SHORT).show()
+        onKeySelected(keyInfo)
+    }
+    dialog.setOnManageKeys {
+        onManageKeys()
+    }
+    dialog.show(activity.supportFragmentManager, "KeySelectionDialog")
 }

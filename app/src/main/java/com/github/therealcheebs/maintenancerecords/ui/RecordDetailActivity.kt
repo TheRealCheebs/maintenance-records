@@ -1,4 +1,3 @@
-
 package com.github.therealcheebs.maintenancerecords.ui
 
 import android.content.Intent
@@ -12,9 +11,12 @@ import com.github.therealcheebs.maintenancerecords.data.LocalNostrEventRepositor
 import com.github.therealcheebs.maintenancerecords.data.toMaintenanceRecordOrNull
 import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecord
 import com.github.therealcheebs.maintenancerecords.data.LocalNostrEvent
+import com.github.therealcheebs.maintenancerecords.R
 import java.text.SimpleDateFormat
 import kotlinx.coroutines.launch
 import java.util.*
+import com.google.android.material.appbar.MaterialToolbar
+import android.view.Menu
 
 
 class RecordDetailActivity : AppCompatActivity() {
@@ -33,6 +35,23 @@ class RecordDetailActivity : AppCompatActivity() {
         val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
         val eventDao = db.localNostrEventDao()
         val eventRepo = LocalNostrEventRepository(eventDao)
+
+        ToolbarHelper.setupToolbar(
+            activity = this,
+            toolbar = binding.toolbar,
+            title = "Record Details",
+            showBackButton = true,
+            onMenuItemClick = { menuItem ->
+                when (menuItem.itemId) {
+                    R.id.action_key_manager -> {
+                        val intent = Intent(this, NostrKeyManagerActivity::class.java)
+                        startActivity(intent)
+                        true
+                    }
+                    else -> false
+                }
+           }
+        )
 
         lifecycleScope.launch {
             val event = eventRepo.getById(eventId)
@@ -85,14 +104,14 @@ class RecordDetailActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        // Connect header back button
-        binding.buttonBack.setOnClickListener {
-            finish()
+        binding.buttonPublish.setOnClickListener {
+            // Implement publish
+            Toast.makeText(this, "publish per notes isn't implemented yet", Toast.LENGTH_SHORT).show()
         }
+    }
 
-        binding.buttonTransfer.setOnClickListener {
-            // Implement ownership transfer
-            Toast.makeText(this, "Ownership transfer not implemented yet", Toast.LENGTH_SHORT).show()
-        }
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
     }
 }

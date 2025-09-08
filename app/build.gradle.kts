@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application") version "8.12.2"
-    id("org.jetbrains.kotlin.android") version "2.0.0"
-    id("org.jetbrains.kotlin.kapt") version "2.0.0"
+    id("org.jetbrains.kotlin.android") version "2.0.21"
+    id("com.google.devtools.ksp") version "2.0.21-1.0.27"
 }
 
 android {
@@ -49,6 +49,7 @@ dependencies {
     implementation("androidx.navigation:navigation-ui-ktx:2.9.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     // Nostr libraries
     // Cryptography
@@ -56,11 +57,10 @@ dependencies {
     // JSON
     implementation("com.squareup.moshi:moshi:1.15.2")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
-    kapt("com.squareup.moshi:moshi-kotlin-codegen:1.15.2")
+    ksp ("com.squareup.moshi:moshi-kotlin-codegen:1.15.2")
 
     // Room Database - Updated to version compatible with Kotlin 2.0.0
     implementation("androidx.room:room-runtime:2.7.0-alpha07")
-    kapt("androidx.room:room-compiler:2.7.0-alpha07")
     implementation("androidx.room:room-ktx:2.7.0-alpha07")
 
     // Networking

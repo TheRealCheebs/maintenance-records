@@ -22,3 +22,18 @@ fun LocalNostrEvent.toMaintenanceRecordOrNull(): MaintenanceRecord? {
         null
     }
 }
+
+fun List<LocalNostrEvent>.toMaintenanceRecords(): List<MaintenanceRecord> =
+    this.mapNotNull { it.toMaintenanceRecordOrNull() }
+
+fun LocalNostrEvent.toNostrEventOrNull(): NostrEvent? {
+    return try {
+        val moshi = Moshi.Builder().build()
+        val nostrEventAdapter = moshi.adapter(NostrEvent::class.java)
+        nostrEventAdapter.fromJson(eventJson)
+    } catch (e: Exception) {
+        android.util.Log.e("EventMapper", "Failed to parse NostrEvent: ${e.message}")
+        android.util.Log.e("EventMapper", "JSON: $eventJson")
+        null
+    }
+}

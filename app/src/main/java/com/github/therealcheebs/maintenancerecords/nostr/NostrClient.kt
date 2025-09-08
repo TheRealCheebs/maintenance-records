@@ -550,6 +550,28 @@ object NostrClient {
             // "wss://relay.damus.io"
         )
     }
+    
+    suspend fun checkRelayConnection(relayUrl: String): Boolean = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val request = Request.Builder()
+                .url(relayUrl)
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            response.isSuccessful
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun checkRelaysHealth(relayUrls: List<String> = getDefaultRelays()): Map<String, Boolean> =
+        withContext(Dispatchers.IO) {
+            val results = relayUrls.map { url ->
+                val isHealthy = checkRelayConnection(url)
+                url to isHealthy
+            }
+            results.toMap()
+        }
 
     // Encryption for private messages
     suspend fun encryptForRecipient(content: String, recipientPubkey: String): String =

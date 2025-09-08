@@ -10,17 +10,26 @@ import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecordDatabas
 import com.github.therealcheebs.maintenancerecords.data.LocalNostrEventRepository
 import com.github.therealcheebs.maintenancerecords.data.KeyInfo
 import com.github.therealcheebs.maintenancerecords.nostr.NostrClient
+import com.github.therealcheebs.maintenancerecords.workers.RetryPublishWorker
 import com.github.therealcheebs.maintenancerecords.R
 import kotlinx.coroutines.launch
 import androidx.lifecycle.lifecycleScope
 import android.widget.Toast
 import java.util.Date
+import androidx.work.OneTimeWorkRequest
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.BackoffPolicy
+import androidx.work.WorkManager
+import com.google.android.material.appbar.MaterialToolbar
+import android.view.Menu
 
 
 class MainActivity : AppCompatActivity() {
+    private val MIN_BACKOFF_MILLIS = 10_000L // 10 seconds
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: RecordAdapter
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -28,11 +37,6 @@ class MainActivity : AppCompatActivity() {
 
         // Ensure NostrClient is initialized only once
         NostrClient.initialize(applicationContext)
-
-        // Show active key alias/name at the top and in toolbar
-        val keyInfo = NostrClient.getCurrentKeyInfo()
-        val aliasOrName = keyInfo?.name ?: "Unknown Key"
-        binding.toolbar.title = "Maintenance Records - $aliasOrName"
 
         // Check if we need to set up keys
         if (NostrClient.needsKeySetup()) {
@@ -43,33 +47,62 @@ class MainActivity : AppCompatActivity() {
             finish()
             return
         }
-
+        
         // Show key selection dialog if multiple keys exist
         if (NostrClient.getAllKeys().size > 1) {
-            showKeySelectionDialog()
+            showKeySelectionDialog(this,
+                onKeySelected = { keyInfo ->
+                    // Update records for the new key
+                    loadRecordsForCurrentKey()
+                    updateToolbarTitle()
+                },
+                onManageKeys = {
+                    val intent = Intent(this, NostrKeyManagerActivity::class.java)
+                    startActivity(intent)
+                }
+            )
         }
 
+        ToolbarHelper.setupToolbar(
+            activity = this,
+            toolbar = binding.toolbar,
+            title = "Maintenance Records - ${NostrClient.getCurrentKeyInfo()?.name ?: "Unknown Key"}",
+            showBackButton = false,
+            onMenuItemClick = { menuItem ->
+                when (menuItem.itemId) {
+                    R.id.action_key_manager -> {
+                        startActivity(Intent(this, NostrKeyManagerActivity::class.java))
+                        true
+                    }
+                    R.id.action_select_key -> {
+                        showKeySelectionDialog(this,
+                            onKeySelected = { keyInfo ->
+                                // Update records for the new key
+                                loadRecordsForCurrentKey()
+                                updateToolbarTitle()
+                            },
+                            onManageKeys = {
+                                val intent = Intent(this, NostrKeyManagerActivity::class.java)
+                                startActivity(intent)
+                            } 
+                        )
+                        true
+                    }
+                    else -> false
+                }
+            }
+        )
         setupRecyclerView()
         setupClickListeners()
+        scheduleRetryPublishWorker()
     }
     
-    private fun showKeySelectionDialog() {
-        val dialog = KeySelectionDialog()
-        dialog.setOnKeySelected { keyInfo ->
-            NostrClient.setCurrentKey(keyInfo.alias)
-            NostrClient.loadKeyPairForCurrentKey()
-            Toast.makeText(this, "Using key: ${keyInfo.name}", Toast.LENGTH_SHORT).show()
-            loadRecordsForCurrentKey()
-        }
-        
-        dialog.setOnManageKeys {
-            val intent = Intent(this, NostrKeyManagerActivity::class.java)
-            startActivity(intent)
-        }
-        
-        dialog.show(supportFragmentManager, "KeySelectionDialog")
+    private fun updateToolbarTitle() {
+        val keyName = NostrClient.getCurrentKeyInfo()?.name ?: "Unknown Key"
+        val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
+        toolbar.title = "Maintenance Records - $keyName"
     }
-    
+
     private fun setupRecyclerView() {
         adapter = RecordAdapter { record ->
             val intent = Intent(this, RecordDetailActivity::class.java).apply {
@@ -77,13 +110,13 @@ class MainActivity : AppCompatActivity() {
             }
             startActivity(intent)
         }
-        
+
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = this@MainActivity.adapter
         }
     }
-    
+
     private fun setupClickListeners() {
         binding.fab.setOnClickListener {
             val bottomSheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
@@ -102,23 +135,43 @@ class MainActivity : AppCompatActivity() {
 
             bottomSheet.show()
         }
-        
-        // Add menu option for key management
-        binding.toolbar.setOnMenuItemClickListener { menuItem ->
-            when (menuItem.itemId) {
-                R.id.action_key_manager -> {
-                    startActivity(Intent(this, NostrKeyManagerActivity::class.java))
-                    true
-                }
-                R.id.action_select_key -> {
-                    showKeySelectionDialog()
-                    true
-                }
-                else -> false
-            }
-        }
+
     }
     
+    // private fun setupToolbar() {
+    //     // Show active key alias/name at the top and in toolbar
+    //     val keyInfo = NostrClient.getCurrentKeyInfo()
+    //     val aliasOrName = keyInfo?.name ?: "Unknown Key"
+    //     val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
+    //     toolbar.title = "Maintenance Records - $aliasOrName"
+    //     setSupportActionBar(toolbar)
+    //     toolbar.setNavigationOnClickListener {
+    //         finish()
+    //     }
+    //     toolbar.setOnMenuItemClickListener { menuItem ->
+    //         when (menuItem.itemId) {
+    //             R.id.action_key_manager -> {
+    //                 startActivity(Intent(this, NostrKeyManagerActivity::class.java))
+    //                 true
+    //             }
+    //             R.id.action_select_key -> {
+    //                 showKeySelectionDialog(this,
+    //                     onKeySelected = { keyInfo ->
+    //                         // Update records for the new key
+    //                         loadRecordsForCurrentKey()
+    //                     },
+    //                     onManageKeys = {
+    //                         val intent = Intent(this, NostrKeyManagerActivity::class.java)
+    //                         startActivity(intent)
+    //                     }
+    //                 )
+    //                 true
+    //             }
+    //             else -> false
+    //         }
+    //     }
+    // }
+
     private fun loadRecordsForCurrentKey() {
         val currentKey = NostrClient.getCurrentKeyInfo()
         if (currentKey == null) {
@@ -168,5 +221,21 @@ class MainActivity : AppCompatActivity() {
             // TODO: Replace with your OwnershipTransferActivity or logic
             Toast.makeText(this, "Transfer Ownership selected", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun scheduleRetryPublishWorker() {
+        val workRequest = OneTimeWorkRequestBuilder<RetryPublishWorker>()
+            .setBackoffCriteria(
+                BackoffPolicy.EXPONENTIAL,
+                MIN_BACKOFF_MILLIS,
+                java.util.concurrent.TimeUnit.MILLISECONDS
+            )
+            .build()
+        WorkManager.getInstance(this).enqueue(workRequest)
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
     }
 }

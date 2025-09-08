@@ -1,5 +1,6 @@
 package com.github.therealcheebs.maintenancerecords.ui
 
+import android.content.Intent
 import android.app.DatePickerDialog
 import android.os.Bundle
 import android.widget.Toast
@@ -14,9 +15,11 @@ import com.github.therealcheebs.maintenancerecords.data.LocalNostrEventRepositor
 import com.github.therealcheebs.maintenancerecords.data.NostrEventState
 import com.github.therealcheebs.maintenancerecords.nostr.NostrClient
 import com.github.therealcheebs.maintenancerecords.nostr.NostrEvent
+import com.github.therealcheebs.maintenancerecords.R
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+import android.view.Menu
 
 class CreateRecordActivity : AppCompatActivity() {
     
@@ -28,12 +31,30 @@ class CreateRecordActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityCreateRecordBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        
+
+        ToolbarHelper.setupToolbar(
+            activity = this,
+            toolbar = binding.toolbar,
+            title = "Create Record",
+            showBackButton = true,
+            onMenuItemClick = { menuItem ->
+                when (menuItem.itemId) {
+                    R.id.action_key_manager -> {
+                        val intent = Intent(this, NostrKeyManagerActivity::class.java)
+                        startActivity(intent)
+                        true
+                    }
+                    // should there be action_select_key here?
+                    else -> false
+                }
+           }
+        )
         setupDateField()
         setupClickListeners()
         setDefaultValues()
     }
     
+
     private fun setupDateField() {
         // Set current date as default
         updateDateField()
@@ -51,6 +72,11 @@ class CreateRecordActivity : AppCompatActivity() {
         }
     }
     
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+
     private fun setDefaultValues() {
         // Set current date
         updateDateField()
@@ -85,15 +111,10 @@ class CreateRecordActivity : AppCompatActivity() {
             saveRecord()
         }
 
-        // Connect header back button
-        binding.buttonBack.setOnClickListener {
-            finish()
-        }
-
         // Add a cancel button in the action bar
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
     }
-    
+
     override fun onSupportNavigateUp(): Boolean {
         onBackPressed()
         return true
