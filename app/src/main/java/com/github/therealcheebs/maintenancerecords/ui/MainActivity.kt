@@ -47,9 +47,9 @@ class MainActivity : AppCompatActivity() {
             finish()
             return
         }
-        
-        // Show key selection dialog if multiple keys exist
-        if (NostrClient.getAllKeys().size > 1) {
+
+        // Show key selection dialog if keys exist
+        if (NostrClient.getAllKeys().size > 0) {
             showKeySelectionDialog(this,
                 onKeySelected = { keyInfo ->
                     // Update records for the new key
@@ -84,7 +84,7 @@ class MainActivity : AppCompatActivity() {
                             onManageKeys = {
                                 val intent = Intent(this, NostrKeyManagerActivity::class.java)
                                 startActivity(intent)
-                            } 
+                            }
                         )
                         true
                     }
@@ -96,7 +96,7 @@ class MainActivity : AppCompatActivity() {
         setupClickListeners()
         scheduleRetryPublishWorker()
     }
-    
+
     private fun updateToolbarTitle() {
         val keyName = NostrClient.getCurrentKeyInfo()?.name ?: "Unknown Key"
         val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
@@ -137,40 +137,6 @@ class MainActivity : AppCompatActivity() {
         }
 
     }
-    
-    // private fun setupToolbar() {
-    //     // Show active key alias/name at the top and in toolbar
-    //     val keyInfo = NostrClient.getCurrentKeyInfo()
-    //     val aliasOrName = keyInfo?.name ?: "Unknown Key"
-    //     val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
-    //     toolbar.title = "Maintenance Records - $aliasOrName"
-    //     setSupportActionBar(toolbar)
-    //     toolbar.setNavigationOnClickListener {
-    //         finish()
-    //     }
-    //     toolbar.setOnMenuItemClickListener { menuItem ->
-    //         when (menuItem.itemId) {
-    //             R.id.action_key_manager -> {
-    //                 startActivity(Intent(this, NostrKeyManagerActivity::class.java))
-    //                 true
-    //             }
-    //             R.id.action_select_key -> {
-    //                 showKeySelectionDialog(this,
-    //                     onKeySelected = { keyInfo ->
-    //                         // Update records for the new key
-    //                         loadRecordsForCurrentKey()
-    //                     },
-    //                     onManageKeys = {
-    //                         val intent = Intent(this, NostrKeyManagerActivity::class.java)
-    //                         startActivity(intent)
-    //                     }
-    //                 )
-    //                 true
-    //             }
-    //             else -> false
-    //         }
-    //     }
-    // }
 
     private fun loadRecordsForCurrentKey() {
         val currentKey = NostrClient.getCurrentKeyInfo()

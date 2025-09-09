@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import com.github.therealcheebs.maintenancerecords.data.LocalNostrEvent
 import com.github.therealcheebs.maintenancerecords.data.LocalNostrEventDao
 
-@Database(entities = [LocalNostrEvent::class], version = 5)
+@Database(entities = [LocalNostrEvent::class], version = 1, exportSchema = true)
 abstract class MaintenanceRecordDatabase : RoomDatabase() {
     abstract fun localNostrEventDao(): LocalNostrEventDao
 
