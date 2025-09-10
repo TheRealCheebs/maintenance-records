@@ -5,10 +5,20 @@
         android:id="@+id/action_select_key"
         android:icon="@drawable/ic_key"
         android:title="Select Key"
-        app:showAsAction="ifRoom" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_key_manager"
         android:icon="@drawable/ic_settings"
         android:title="Key Manager"
-        app:showAsAction="ifRoom" />
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_key_manager"
+        android:icon="@drawable/ic_settings"
+        android:title="Settings"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_exit"
+        android:icon="@android:drawable/ic_menu_close_clear_cancel"
+        android:title="Exit"
+        app:showAsAction="never" />
 </menu>

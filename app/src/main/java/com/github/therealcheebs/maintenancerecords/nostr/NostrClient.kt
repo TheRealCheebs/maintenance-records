@@ -37,6 +37,7 @@ object NostrClient {
     private lateinit var prefs: SharedPreferences
     private lateinit var keyPair: KeyPair
     private lateinit var encryptedPrefs: SharedPreferences
+    private var isInitialized: Boolean = false
     private val httpClient = OkHttpClient()
     private val activeWebSockets = ConcurrentHashMap<String, WebSocket>()
     private val eventSubscriptions = ConcurrentHashMap<String, (NostrEvent) -> Unit>()
@@ -49,13 +50,14 @@ object NostrClient {
     private val keyInfoListAdapter = moshi.adapter<List<KeyInfo>>(Types.newParameterizedType(List::class.java, KeyInfo::class.java))
 
     fun initialize(appContext: Context) {
+        if (isInitialized) return
         context = appContext
         prefs = context.getSharedPreferences("nostr_prefs", Context.MODE_PRIVATE)
         setupEncryptedStorage()
         loadCurrentKeyFromStorage()
-        //initializeKeyPair()
+        isInitialized = true
     }
-        
+
     private fun setupEncryptedStorage() {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -69,10 +71,10 @@ object NostrClient {
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     }
-    
+
     private fun loadCurrentKeyFromStorage() {
         currentKeyAlias = encryptedPrefs.getString("last_used_key", null)
-        
+
         // If no key is set but we have keys, use the first one
         if (currentKeyAlias == null) {
             val allKeys = getAllKeys()
@@ -83,7 +85,7 @@ object NostrClient {
             }
         }
     }
-    
+
     private fun saveCurrentKeyToStorage() {
         currentKeyAlias?.let { alias ->
             encryptedPrefs.edit()
@@ -93,12 +95,12 @@ object NostrClient {
     }
 
     // Key management methods
-    suspend fun generateNewKey(name: String = "Key ${System.currentTimeMillis()}"): String = 
+    suspend fun generateNewKey(name: String = "Key ${System.currentTimeMillis()}"): String =
         withContext(Dispatchers.IO) {
             val keyGen = KeyPairGenerator.getInstance("EC")
             keyGen.initialize(256)
             val keyPair = keyGen.generateKeyPair()
-            
+
             val alias = "key_${System.currentTimeMillis()}"
             val keyInfo = KeyInfo(
                 alias = alias,
@@ -108,21 +110,21 @@ object NostrClient {
                 createdAt = System.currentTimeMillis(),
                 isDefault = getAllKeys().isEmpty() // First key is default
             )
-            
+
             saveKeyInfo(keyInfo)
             setCurrentKey(alias)
-            
+
             alias
         }
 
     suspend fun importKey(
-        privateKey: String, 
+        privateKey: String,
         name: String = "Imported Key"
     ): String = withContext(Dispatchers.IO) {
         try {
             // Parse the private key and derive public key
             val (publicKey, parsedPrivateKey) = parseAndValidateKey(privateKey)
-            
+
             val alias = "imported_${System.currentTimeMillis()}"
             val keyInfo = KeyInfo(
                 alias = alias,
@@ -132,10 +134,10 @@ object NostrClient {
                 createdAt = System.currentTimeMillis(),
                 isDefault = getAllKeys().isEmpty() // First key is default
             )
-            
+
             saveKeyInfo(keyInfo)
             setCurrentKey(alias)
-            
+
             alias
         } catch (e: Exception) {
             throw Exception("Failed to import key: ${e.message}")
@@ -214,16 +216,16 @@ object NostrClient {
 
     private fun saveKeyInfo(keyInfo: KeyInfo) {
         val existingKeys = getAllKeys().toMutableList()
-        
+
         // Remove if key with same alias exists
         existingKeys.removeAll { it.alias == keyInfo.alias }
-        
+
         // Add the new key
         existingKeys.add(keyInfo)
-        
+
         // Save back to preferences
         val keysJson = keyInfoListAdapter.toJson(existingKeys)
-        
+
         encryptedPrefs.edit()
             .putString("saved_keys", keysJson)
             .apply()
@@ -232,13 +234,13 @@ object NostrClient {
     fun deleteKey(alias: String) {
         val existingKeys = getAllKeys().toMutableList()
         existingKeys.removeAll { it.alias == alias }
-        
+
         val keysJson = keyInfoListAdapter.toJson(existingKeys)
-        
+
         encryptedPrefs.edit()
             .putString("saved_keys", keysJson)
             .apply()
-        
+
         // If we deleted the current key, switch to another one
         if (currentKeyAlias == alias) {
             val remainingKeys = getAllKeyAliases()
@@ -266,37 +268,12 @@ object NostrClient {
         val keys = getAllKeys().toMutableList()
         val updatedKeys = keys.map { it.copy(isDefault = (it.alias == alias)) }
         val keysJson = keyInfoListAdapter.toJson(updatedKeys)
-        
+
         encryptedPrefs.edit()
             .putString("saved_keys", keysJson)
             .apply()
     }
 
-    private fun initializeKeyPair() {
-        val privateKeyHex = prefs.getString("private_key", null)
-        val publicKeyHex = prefs.getString("public_key", null)
-
-        if (privateKeyHex != null && publicKeyHex != null) {
-            // Load existing key pair
-            keyPair = KeyPair(
-                decodePublicKey(publicKeyHex),
-                decodePrivateKey(privateKeyHex)
-            )
-        } else {
-            // Generate new key pair
-            val keyGen = KeyPairGenerator.getInstance("EC")
-            keyGen.initialize(256)
-            keyPair = keyGen.generateKeyPair()
-
-            // Save keys
-            prefs.edit()
-                .putString("private_key", encodePrivateKey(keyPair.private))
-                .putString("public_key", encodePublicKey(keyPair.public))
-                .apply()
-        }
-    }
-
-    
     // Key encoding/decoding methods
     private fun encodePublicKey(publicKey: PublicKey): String {
         return Base64.encodeToString(publicKey.encoded, Base64.NO_WRAP)
@@ -505,14 +482,13 @@ object NostrClient {
     }
 
     /**
-     * Fetches all maintenance records for the given pubkey from Nostr relays.
+     * Fetches all Nostr events for the given pubkey from Nostr relays. If kind is provided, filters by kind.
      */
-    suspend fun fetchRecordsForKey(pubkey: String): List<MaintenanceRecord> = withContext(Dispatchers.IO) {
-        val records = mutableListOf<MaintenanceRecord>()
-        val filter = mapOf(
-            "pubkey" to pubkey,
-            "kind" to NostrEvent.KIND_MAINTENANCE_RECORD
-        )
+    suspend fun fetchEventsForKey(pubkey: String, kind: Int? = null): List<NostrEvent> = withContext(Dispatchers.IO) {
+        val filter = mutableMapOf<String, Any>("pubkey" to pubkey)
+        if (kind != null) {
+            filter["kind"] = kind
+        }
         val relayUrls = getDefaultRelays()
 
         val eventList = Collections.synchronizedList(mutableListOf<NostrEvent>())
@@ -526,16 +502,7 @@ object NostrClient {
         // Wait briefly for events to arrive (simple approach)
         Thread.sleep(2000) // You may want a more robust async solution
 
-        // Parse events to MaintenanceRecord
-        eventList.forEach { event ->
-            try {
-                val record = MaintenanceRecord.fromNostrEvent(event, pubkey)
-                records.add(record)
-            } catch (e: Exception) {
-                // Skip malformed events
-            }
-        }
-        records
+        eventList.toList()
     }
 
     private fun connectToRelay(relayUrl: String): WebSocket {
@@ -578,11 +545,33 @@ object NostrClient {
 
     private fun getDefaultRelays(): List<String> {
         return listOf(
-            "wss://relay.nostr.example",
-            "wss://nostr-relay.example",
-            "wss://relay.damus.io"
+            // "wss://relay.nostr.example",
+            // "wss://nostr-relay.example",
+            // "wss://relay.damus.io"
         )
     }
+    
+    suspend fun checkRelayConnection(relayUrl: String): Boolean = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val request = Request.Builder()
+                .url(relayUrl)
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            response.isSuccessful
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun checkRelaysHealth(relayUrls: List<String> = getDefaultRelays()): Map<String, Boolean> =
+        withContext(Dispatchers.IO) {
+            val results = relayUrls.map { url ->
+                val isHealthy = checkRelayConnection(url)
+                url to isHealthy
+            }
+            results.toMap()
+        }
 
     // Encryption for private messages
     suspend fun encryptForRecipient(content: String, recipientPubkey: String): String =
@@ -637,32 +626,57 @@ object NostrClient {
     }
 
     // Utility methods
-    fun clearKeys() {
-        prefs.edit()
-            .remove("private_key")
-            .remove("public_key")
-            .apply()
-        initializeKeyPair()
-    }
+
+        fun clearKeys() {
+            encryptedPrefs.edit()
+                .remove("saved_keys")
+                .remove("last_used_key")
+                .apply()
+            currentKeyAlias = null
+        }
 
     fun exportKeys(): Map<String, String> {
-        return mapOf(
-            "public_key" to getPublicKey(),
-            "private_key" to getPrivateKey()
-        )
+        val keyInfo = getCurrentKeyInfo()
+        return if (keyInfo != null) {
+            mapOf(
+                "public_key" to keyInfo.publicKey,
+                "private_key" to keyInfo.privateKey,
+                "alias" to keyInfo.alias,
+                "name" to keyInfo.name
+            )
+        } else {
+            emptyMap()
+        }
     }
 
     fun importKeys(publicKey: String, privateKey: String) {
-        prefs.edit()
-            .putString("public_key", publicKey)
-            .putString("private_key", privateKey)
-            .apply()
-        initializeKeyPair()
+        val alias = "imported_${System.currentTimeMillis()}"
+        val keyInfo = KeyInfo(
+            alias = alias,
+            name = "Imported Key",
+            publicKey = publicKey,
+            privateKey = privateKey,
+            createdAt = System.currentTimeMillis(),
+            isDefault = getAllKeys().isEmpty()
+        )
+        saveKeyInfo(keyInfo)
+        setCurrentKey(alias)
     }
 
     suspend fun closeConnections() {
         activeWebSockets.values.forEach { it.close(1000, "Normal closure") }
         activeWebSockets.clear()
         eventSubscriptions.clear()
+    }
+
+    fun loadKeyPairForCurrentKey() {
+        val keyInfo = getCurrentKeyInfo()
+        if (keyInfo != null) {
+            val publicKey = decodePublicKey(keyInfo.publicKey)
+            val privateKey = decodePrivateKey(keyInfo.privateKey)
+            keyPair = KeyPair(publicKey, privateKey)
+        } else {
+            throw IllegalStateException("No current key info available")
+        }
     }
 }

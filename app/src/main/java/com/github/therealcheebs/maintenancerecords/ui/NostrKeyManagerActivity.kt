@@ -17,6 +17,7 @@ import com.google.zxing.integration.android.IntentResult
 import com.github.therealcheebs.maintenancerecords.databinding.ActivityNostrKeyManagerBinding
 import com.github.therealcheebs.maintenancerecords.nostr.NostrClient
 import com.github.therealcheebs.maintenancerecords.data.KeyInfo
+import com.github.therealcheebs.maintenancerecords.R
 import kotlinx.coroutines.launch
 
 class NostrKeyManagerActivity : AppCompatActivity() {
@@ -40,6 +41,36 @@ class NostrKeyManagerActivity : AppCompatActivity() {
         binding = ActivityNostrKeyManagerBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        ToolbarHelper.setupToolbar(
+            activity = this,
+            toolbar = binding.toolbar,
+            title = "Nostr Key Management",
+            showBackButton = true,
+            onMenuItemClick = { menuItem ->
+                when (menuItem.itemId) {
+                    R.id.action_select_key -> {
+                        showKeySelectionDialog(this,
+                            onKeySelected = { keyInfo ->
+                                // select the key and return to main activity
+                                NostrClient.setCurrentKey(keyInfo.alias)
+                                NostrClient.loadKeyPairForCurrentKey()
+                                loadKeys()
+                                Toast.makeText(this, "Selected: ${keyInfo.name}", Toast.LENGTH_SHORT).show()
+                                // Update records for the new key
+                            },
+                            onManageKeys = {
+                                val intent = Intent(this@NostrKeyManagerActivity, MainActivity::class.java)
+                                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                startActivity(intent)
+                                finish()
+                            }
+                        )
+                        true
+                    }
+                    else -> false
+                }
+            }
+        )
         setupRecyclerView()
         setupClickListeners()
         loadKeys()
@@ -75,8 +106,13 @@ class NostrKeyManagerActivity : AppCompatActivity() {
             checkCameraPermissionAndStartQrScanner()
         }
 
-        binding.buttonBack.setOnClickListener {
-            finish()
+        binding.buttonDeleteKey.setOnClickListener {
+            val currentKey = NostrClient.getCurrentKeyInfo()
+            if (currentKey != null) {
+                deleteKey(currentKey)
+            } else {
+                Toast.makeText(this, "No key selected to delete", Toast.LENGTH_SHORT).show()
+            }
         }
 
         binding.buttonCopyPublicKey.setOnClickListener {
@@ -91,7 +127,6 @@ class NostrKeyManagerActivity : AppCompatActivity() {
         // Check if this is first-time setup
         if (intent.getBooleanExtra("first_time", false)) {
             binding.textViewTitle.text = "Welcome! Set up your Nostr key"
-            binding.buttonBack.visibility = android.view.View.GONE
         }
     }
 
@@ -157,6 +192,10 @@ class NostrKeyManagerActivity : AppCompatActivity() {
                         val alias = NostrClient.generateNewKey(nickname)
                         loadKeys()
                         Toast.makeText(this@NostrKeyManagerActivity, "New key generated successfully", Toast.LENGTH_SHORT).show()
+                        val intent = Intent(this@NostrKeyManagerActivity, MainActivity::class.java)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
+                        finish()
                     } catch (e: Exception) {
                         Toast.makeText(this@NostrKeyManagerActivity, "Failed to generate key: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
@@ -168,6 +207,7 @@ class NostrKeyManagerActivity : AppCompatActivity() {
 
     private fun selectKey(keyInfo: KeyInfo) {
         NostrClient.setCurrentKey(keyInfo.alias)
+        NostrClient.loadKeyPairForCurrentKey()
         loadKeys()
         Toast.makeText(this, "Selected: ${keyInfo.name}", Toast.LENGTH_SHORT).show()
     }

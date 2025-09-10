@@ -1,7 +1,8 @@
 plugins {
     id("com.android.application") version "8.12.2"
-    id("org.jetbrains.kotlin.android") version "2.0.0"
-    id("org.jetbrains.kotlin.kapt") version "2.0.0"
+    id("org.jetbrains.kotlin.android") version "2.0.21"
+    id("com.google.devtools.ksp") version "2.0.21-1.0.27"
+    id("androidx.room") version "2.6.1"
 }
 
 android {
@@ -36,6 +37,9 @@ android {
     buildFeatures {
         viewBinding = true
     }
+    room {
+        schemaDirectory("$projectDir/schemas")
+    }
 }
 
 dependencies {
@@ -49,6 +53,7 @@ dependencies {
     implementation("androidx.navigation:navigation-ui-ktx:2.9.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     // Nostr libraries
     // Cryptography
@@ -56,11 +61,12 @@ dependencies {
     // JSON
     implementation("com.squareup.moshi:moshi:1.15.2")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
+    ksp ("com.squareup.moshi:moshi-kotlin-codegen:1.15.2")
 
     // Room Database - Updated to version compatible with Kotlin 2.0.0
     implementation("androidx.room:room-runtime:2.7.0-alpha07")
-    kapt("androidx.room:room-compiler:2.7.0-alpha07")
     implementation("androidx.room:room-ktx:2.7.0-alpha07")
+    ksp ("androidx.room:room-compiler:2.7.0-alpha07")
 
     // Networking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -69,8 +75,16 @@ dependencies {
 
     // Testing
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.3.0")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test:core:1.5.0")
+    androidTestImplementation("androidx.test:runner:1.5.2")
+    androidTestImplementation("androidx.test:rules:1.5.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation("androidx.test.espresso:espresso-intents:3.5.1")
+    androidTestImplementation("androidx.test.espresso:espresso-contrib:3.5.1")
+
+    // Room testing
+    testImplementation("androidx.room:room-testing:2.6.1")
 
     // kotlinx-metadata-jvm - already at correct version
     implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")

@@ -25,4 +25,7 @@
         <item name="titleTextColor">@color/white</item>
     </style>
     <style name="Theme.MaintenanceRecords.PopupOverlay" parent="ThemeOverlay.AppCompat.Light" />
+    <style name="App.PopupMenu" parent="Widget.MaterialComponents.PopupMenu">
+        <item name="android:textColor">@color/black</item> <!-- or @color/white for dark backgrounds -->
+    </style>
 </resources>

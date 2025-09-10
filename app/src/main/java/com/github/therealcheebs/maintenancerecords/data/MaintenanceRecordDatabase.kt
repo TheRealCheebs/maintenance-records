@@ -4,10 +4,12 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import com.github.therealcheebs.maintenancerecords.data.LocalNostrEvent
+import com.github.therealcheebs.maintenancerecords.data.LocalNostrEventDao
 
-@Database(entities = [MaintenanceRecord::class], version = 1)
+@Database(entities = [LocalNostrEvent::class], version = 1, exportSchema = true)
 abstract class MaintenanceRecordDatabase : RoomDatabase() {
-    abstract fun maintenanceRecordDao(): MaintenanceRecordDao
+    abstract fun localNostrEventDao(): LocalNostrEventDao
 
     companion object {
         @Volatile
@@ -19,7 +21,8 @@ abstract class MaintenanceRecordDatabase : RoomDatabase() {
                     context.applicationContext,
                     MaintenanceRecordDatabase::class.java,
                     "maintenance_record_db"
-                ).build()
+                ).fallbackToDestructiveMigration()
+                 .build()
                 INSTANCE = instance
                 instance
             }

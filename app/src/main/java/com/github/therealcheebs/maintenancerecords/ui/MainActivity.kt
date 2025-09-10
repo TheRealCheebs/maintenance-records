@@ -7,27 +7,36 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.github.therealcheebs.maintenancerecords.databinding.ActivityMainBinding
 import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecord
 import com.github.therealcheebs.maintenancerecords.data.MaintenanceRecordDatabase
+import com.github.therealcheebs.maintenancerecords.data.LocalNostrEventRepository
 import com.github.therealcheebs.maintenancerecords.data.KeyInfo
 import com.github.therealcheebs.maintenancerecords.nostr.NostrClient
+import com.github.therealcheebs.maintenancerecords.workers.RetryPublishWorker
 import com.github.therealcheebs.maintenancerecords.R
 import kotlinx.coroutines.launch
 import androidx.lifecycle.lifecycleScope
 import android.widget.Toast
 import java.util.Date
+import androidx.work.OneTimeWorkRequest
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.BackoffPolicy
+import androidx.work.WorkManager
+import com.google.android.material.appbar.MaterialToolbar
+import android.view.Menu
 
 
 class MainActivity : AppCompatActivity() {
+    private val MIN_BACKOFF_MILLIS = 10_000L // 10 seconds
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: RecordAdapter
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Show active key alias/name at the top
-        val keyInfo = NostrClient.getCurrentKeyInfo()
-        val aliasOrName = keyInfo?.name ?: "Unknown Key"
+        // Ensure NostrClient is initialized only once
+        NostrClient.initialize(applicationContext)
 
         // Check if we need to set up keys
         if (NostrClient.needsKeySetup()) {
@@ -39,45 +48,75 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Show key selection dialog if multiple keys exist
-        if (NostrClient.getAllKeys().size > 1) {
-            showKeySelectionDialog()
+        // Show key selection dialog if keys exist
+        if (NostrClient.getAllKeys().size > 0) {
+            showKeySelectionDialog(this,
+                onKeySelected = { keyInfo ->
+                    // Update records for the new key
+                    loadRecordsForCurrentKey()
+                    updateToolbarTitle()
+                },
+                onManageKeys = {
+                    val intent = Intent(this, NostrKeyManagerActivity::class.java)
+                    startActivity(intent)
+                }
+            )
         }
 
+        ToolbarHelper.setupToolbar(
+            activity = this,
+            toolbar = binding.toolbar,
+            title = "Maintenance Records - ${NostrClient.getCurrentKeyInfo()?.name ?: "Unknown Key"}",
+            showBackButton = false,
+            onMenuItemClick = { menuItem ->
+                when (menuItem.itemId) {
+                    R.id.action_key_manager -> {
+                        startActivity(Intent(this, NostrKeyManagerActivity::class.java))
+                        true
+                    }
+                    R.id.action_select_key -> {
+                        showKeySelectionDialog(this,
+                            onKeySelected = { keyInfo ->
+                                // Update records for the new key
+                                loadRecordsForCurrentKey()
+                                updateToolbarTitle()
+                            },
+                            onManageKeys = {
+                                val intent = Intent(this, NostrKeyManagerActivity::class.java)
+                                startActivity(intent)
+                            }
+                        )
+                        true
+                    }
+                    else -> false
+                }
+            }
+        )
         setupRecyclerView()
         setupClickListeners()
+        scheduleRetryPublishWorker()
     }
-    
-    private fun showKeySelectionDialog() {
-        val dialog = KeySelectionDialog()
-        dialog.setOnKeySelected { keyInfo ->
-            NostrClient.setCurrentKey(keyInfo.alias)
-            Toast.makeText(this, "Using key: ${keyInfo.name}", Toast.LENGTH_SHORT).show()
-            loadRecordsForCurrentKey()
-        }
-        
-        dialog.setOnManageKeys {
-            val intent = Intent(this, NostrKeyManagerActivity::class.java)
-            startActivity(intent)
-        }
-        
-        dialog.show(supportFragmentManager, "KeySelectionDialog")
+
+    private fun updateToolbarTitle() {
+        val keyName = NostrClient.getCurrentKeyInfo()?.name ?: "Unknown Key"
+        val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
+        toolbar.title = "Maintenance Records - $keyName"
     }
-    
+
     private fun setupRecyclerView() {
         adapter = RecordAdapter { record ->
             val intent = Intent(this, RecordDetailActivity::class.java).apply {
-                putExtra("RECORD_ID", record.itemId)
+                putExtra("RECORD_ID", record.id)
             }
             startActivity(intent)
         }
-        
+
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = this@MainActivity.adapter
         }
     }
-    
+
     private fun setupClickListeners() {
         binding.fab.setOnClickListener {
             val bottomSheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
@@ -96,68 +135,9 @@ class MainActivity : AppCompatActivity() {
 
             bottomSheet.show()
         }
-        
-        // Add menu option for key management
-        binding.toolbar.setOnMenuItemClickListener { menuItem ->
-            when (menuItem.itemId) {
-                R.id.action_key_manager -> {
-                    startActivity(Intent(this, NostrKeyManagerActivity::class.java))
-                    true
-                }
-                R.id.action_select_key -> {
-                    showKeySelectionDialog()
-                    true
-                }
-                else -> false
-            }
-        }
+
     }
-    
-    private fun loadSampleData() {
-        val sampleRecords = listOf(
-            MaintenanceRecord(
-                localId = 1L,
-                createdAt = 1693500000000, // Example date
-                updatedAt = 1693503600000,
-                itemId = "vehicle_001",
-                description = "Oil change and filter replacement",
-                technician = "Quick Lube",
-                cost = 75.00,
-                datePerformed = 1693496400000,
-                mileage = 12000L,
-                notes = "Used synthetic oil",
-                nostrEventId = "event_abc123",
-                verified = true,
-                technicianSignoffEventId = "signoff_xyz789",
-                currentOwnerPubkey = "npub1ownerpubkeyabc",
-                previousOwnerPubkey = "npub1prevownerpubkeyxyz",
-                isDeleted = false,
-                isEncrypted = false
-            ),
-            MaintenanceRecord(
-                localId = 2L,
-                createdAt = 1693586400000, // Example date
-                updatedAt = 1693590000000,
-                itemId = "vehicle_002",
-                description = "Tire rotation and balance",
-                technician = "Tire Shop",
-                cost = 50.00,
-                datePerformed = 1693582800000,
-                mileage = 15000L,
-                notes = "Front tires to back",
-                nostrEventId = "event_def456",
-                verified = false,
-                technicianSignoffEventId = null,
-                currentOwnerPubkey = "npub1ownerpubkeydef",
-                previousOwnerPubkey = null,
-                isDeleted = false,
-                isEncrypted = false
-            )
-        )
-        
-        adapter.submitList(sampleRecords)
-    }
-    
+
     private fun loadRecordsForCurrentKey() {
         val currentKey = NostrClient.getCurrentKeyInfo()
         if (currentKey == null) {
@@ -166,32 +146,62 @@ class MainActivity : AppCompatActivity() {
         }
         val currentPubkey = currentKey.publicKey
         val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
+        val eventDao = db.localNostrEventDao()
+        val eventRepo = LocalNostrEventRepository(eventDao)
+        val emptyStateView = findViewById<android.view.View>(R.id.emptyStateView)
+        val emptyStateText = emptyStateView?.findViewById<android.widget.TextView>(R.id.emptyStateText)
+        val btnCreateRecord = findViewById<android.widget.Button>(R.id.btnCreateRecord)
+        val btnTransferOwnership = findViewById<android.widget.Button>(R.id.btnTransferOwnership)
+
         lifecycleScope.launch {
-            val records = db.maintenanceRecordDao().getRecordsByOwner(currentPubkey)
-            adapter.submitList(records)
-            if (records.isEmpty()) {
-                runOnUiThread {
-                    android.app.AlertDialog.Builder(this@MainActivity)
-                        .setTitle("No Records Found")
-                        .setMessage("There is no record activity for this key.")
-                        .setPositiveButton("OK", null)
-                        .setNegativeButton("Import Records") { _, _ ->
-                            lifecycleScope.launch {
-                                try {
-                                    val nostrRecords = NostrClient.fetchRecordsForKey(currentPubkey)
-                                    val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
-                                    nostrRecords.forEach { db.maintenanceRecordDao().insert(it) }
-                                    val updatedRecords = db.maintenanceRecordDao().getRecordsByOwner(currentPubkey)
-                                    adapter.submitList(updatedRecords)
-                                    Toast.makeText(this@MainActivity, "Records imported successfully", Toast.LENGTH_SHORT).show()
-                                } catch (e: Exception) {
-                                    Toast.makeText(this@MainActivity, "Import failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                                }
+            val events = eventRepo.getAllByPubkey(currentPubkey)
+            adapter.submitList(events)
+            if (events.isEmpty()) {
+                emptyStateText?.text = "No records found for ${currentKey.name}"
+                ImportRecordsDialogFragment(
+                    eventRepo = eventRepo,
+                    pubkey = currentPubkey,
+                    onRecordsImported = {
+                        lifecycleScope.launch {
+                            val updatedEvents = eventRepo.getAllByPubkey(currentPubkey)
+                            adapter.submitList(updatedEvents)
+                            if (updatedEvents.isEmpty()) {
+                                emptyStateView?.visibility = android.view.View.VISIBLE
+                                emptyStateText?.text = "No records found for ${currentKey.name}"
+                            } else {
+                                emptyStateView?.visibility = android.view.View.GONE
                             }
                         }
-                        .show()
-                }
+                    }
+                ).show(supportFragmentManager, "ImportRecordsDialogFragment")
+                emptyStateView?.visibility = android.view.View.VISIBLE
+            } else {
+                emptyStateView?.visibility = android.view.View.GONE
             }
         }
+
+        btnCreateRecord?.setOnClickListener {
+            startActivity(Intent(this, CreateRecordActivity::class.java))
+        }
+        btnTransferOwnership?.setOnClickListener {
+            // TODO: Replace with your OwnershipTransferActivity or logic
+            Toast.makeText(this, "Transfer Ownership selected", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun scheduleRetryPublishWorker() {
+        val workRequest = OneTimeWorkRequestBuilder<RetryPublishWorker>()
+            .setBackoffCriteria(
+                BackoffPolicy.EXPONENTIAL,
+                MIN_BACKOFF_MILLIS,
+                java.util.concurrent.TimeUnit.MILLISECONDS
+            )
+            .build()
+        WorkManager.getInstance(this).enqueue(workRequest)
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
     }
 }
