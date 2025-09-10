@@ -50,15 +50,20 @@ class MainActivity : AppCompatActivity() {
 
         // Show key selection dialog if keys exist
         if (NostrClient.getAllKeys().size > 0) {
-            showKeySelectionDialog(this,
+            showKeySelectionDialog(
+                this,
                 onKeySelected = { keyInfo ->
-                    // Update records for the new key
                     loadRecordsForCurrentKey()
                     updateToolbarTitle()
                 },
                 onManageKeys = {
                     val intent = Intent(this, NostrKeyManagerActivity::class.java)
                     startActivity(intent)
+                },
+                onDialogDismissed = {
+                    // Always load records when dialog is dismissed/canceled
+                    loadRecordsForCurrentKey()
+                    updateToolbarTitle()
                 }
             )
         }
@@ -75,15 +80,19 @@ class MainActivity : AppCompatActivity() {
                         true
                     }
                     R.id.action_select_key -> {
-                        showKeySelectionDialog(this,
+                        showKeySelectionDialog(
+                            this,
                             onKeySelected = { keyInfo ->
-                                // Update records for the new key
                                 loadRecordsForCurrentKey()
                                 updateToolbarTitle()
                             },
                             onManageKeys = {
                                 val intent = Intent(this, NostrKeyManagerActivity::class.java)
                                 startActivity(intent)
+                            },
+                            onDialogDismissed = {
+                                loadRecordsForCurrentKey()
+                                updateToolbarTitle()
                             }
                         )
                         true
