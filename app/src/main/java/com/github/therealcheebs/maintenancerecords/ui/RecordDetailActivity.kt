@@ -104,6 +104,30 @@ class RecordDetailActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
+        binding.buttonDelete.setOnClickListener {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Delete Record")
+                .setMessage("Are you sure you want to delete this record? This action cannot be undone.")
+                .setPositiveButton("Delete") { _, _ ->
+                    lifecycleScope.launch {
+                        val eventId = record?.nostrEventId ?: return@launch
+                        val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
+                        val eventDao = db.localNostrEventDao()
+                        val eventRepo = LocalNostrEventRepository(eventDao)
+                        val event = eventRepo.getById(eventId)
+                        if (event != null) {
+                            eventRepo.delete(event)
+                            Toast.makeText(this@RecordDetailActivity, "Record deleted", Toast.LENGTH_SHORT).show()
+                            finish()
+                        } else {
+                            Toast.makeText(this@RecordDetailActivity, "Record not found", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
         binding.buttonPublish.setOnClickListener {
             // Implement publish
             Toast.makeText(this, "publish per notes isn't implemented yet", Toast.LENGTH_SHORT).show()

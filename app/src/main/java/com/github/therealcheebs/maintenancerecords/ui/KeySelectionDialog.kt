@@ -20,6 +20,10 @@ class KeySelectionDialog : DialogFragment() {
     private var selectedKey: KeyInfo? = null
     private var onKeySelected: ((KeyInfo) -> Unit)? = null
     private var onManageKeys: (() -> Unit)? = null
+    private var onDialogDismissed: (() -> Unit)? = null
+    fun setOnDialogDismissed(listener: () -> Unit) {
+        onDialogDismissed = listener
+    }
     
     fun setOnKeySelected(listener: (KeyInfo) -> Unit) {
         onKeySelected = listener
@@ -86,12 +90,18 @@ class KeySelectionDialog : DialogFragment() {
         super.onDestroyView()
         _binding = null
     }
+
+    override fun onDismiss(dialog: android.content.DialogInterface) {
+        super.onDismiss(dialog)
+        onDialogDismissed?.invoke()
+    }
 }
 
 fun showKeySelectionDialog(
     activity: androidx.fragment.app.FragmentActivity,
     onKeySelected: (KeyInfo) -> Unit,
-    onManageKeys: () -> Unit
+    onManageKeys: () -> Unit,
+    onDialogDismissed: () -> Unit
 ) {
     val dialog = KeySelectionDialog()
     dialog.setOnKeySelected { keyInfo ->
@@ -102,6 +112,9 @@ fun showKeySelectionDialog(
     }
     dialog.setOnManageKeys {
         onManageKeys()
+    }
+    dialog.setOnDialogDismissed {
+        onDialogDismissed()
     }
     dialog.show(activity.supportFragmentManager, "KeySelectionDialog")
 }

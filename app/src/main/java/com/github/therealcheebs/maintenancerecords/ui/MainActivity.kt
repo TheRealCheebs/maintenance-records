@@ -25,6 +25,13 @@ import android.view.Menu
 
 
 class MainActivity : AppCompatActivity() {
+    private var keySelected = false
+
+    override fun onResume() {
+        super.onResume()
+        updateToolbarTitle()
+        loadRecordsForCurrentKey()
+    }
     private val MIN_BACKOFF_MILLIS = 10_000L // 10 seconds
 
     private lateinit var binding: ActivityMainBinding
@@ -48,17 +55,32 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Show key selection dialog if keys exist
-        if (NostrClient.getAllKeys().size > 0) {
-            showKeySelectionDialog(this,
+        // If returning from key creation, mark key as selected
+        val keyJustCreated = intent.getBooleanExtra("key_just_created", false)
+        if (keyJustCreated && NostrClient.getCurrentKeyInfo() != null) {
+            keySelected = true
+        }
+
+        // Show key selection dialog if keys exist and key not selected
+        if (NostrClient.getAllKeys().size > 0 && !keySelected) {
+            showKeySelectionDialog(
+                this,
                 onKeySelected = { keyInfo ->
-                    // Update records for the new key
+                    keySelected = true
                     loadRecordsForCurrentKey()
                     updateToolbarTitle()
                 },
                 onManageKeys = {
                     val intent = Intent(this, NostrKeyManagerActivity::class.java)
                     startActivity(intent)
+                },
+                onDialogDismissed = {
+                    // Only load records if a key was selected
+                    if (NostrClient.getCurrentKeyInfo() != null) {
+                        keySelected = true
+                        loadRecordsForCurrentKey()
+                        updateToolbarTitle()
+                    }
                 }
             )
         }
@@ -66,7 +88,7 @@ class MainActivity : AppCompatActivity() {
         ToolbarHelper.setupToolbar(
             activity = this,
             toolbar = binding.toolbar,
-            title = "Maintenance Records - ${NostrClient.getCurrentKeyInfo()?.name ?: "Unknown Key"}",
+            title = "Maintenance Records",
             showBackButton = false,
             onMenuItemClick = { menuItem ->
                 when (menuItem.itemId) {
@@ -75,15 +97,19 @@ class MainActivity : AppCompatActivity() {
                         true
                     }
                     R.id.action_select_key -> {
-                        showKeySelectionDialog(this,
+                        showKeySelectionDialog(
+                            this,
                             onKeySelected = { keyInfo ->
-                                // Update records for the new key
                                 loadRecordsForCurrentKey()
                                 updateToolbarTitle()
                             },
                             onManageKeys = {
                                 val intent = Intent(this, NostrKeyManagerActivity::class.java)
                                 startActivity(intent)
+                            },
+                            onDialogDismissed = {
+                                loadRecordsForCurrentKey()
+                                updateToolbarTitle()
                             }
                         )
                         true
@@ -98,9 +124,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateToolbarTitle() {
-        val keyName = NostrClient.getCurrentKeyInfo()?.name ?: "Unknown Key"
+        val keyName = NostrClient.getCurrentKeyInfo()?.name
         val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
-        toolbar.title = "Maintenance Records - $keyName"
+        if (keyName != null) {
+            toolbar.title = "Maintenance Records - $keyName"
+        } else {
+            toolbar.title = "Maintenance Records"
+        }
     }
 
     private fun setupRecyclerView() {
@@ -140,18 +170,28 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadRecordsForCurrentKey() {
         val currentKey = NostrClient.getCurrentKeyInfo()
-        if (currentKey == null) {
-            Toast.makeText(this, "No active key found. Please set up a key.", Toast.LENGTH_LONG).show()
-            return
-        }
-        val currentPubkey = currentKey.publicKey
-        val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
-        val eventDao = db.localNostrEventDao()
-        val eventRepo = LocalNostrEventRepository(eventDao)
         val emptyStateView = findViewById<android.view.View>(R.id.emptyStateView)
         val emptyStateText = emptyStateView?.findViewById<android.widget.TextView>(R.id.emptyStateText)
         val btnCreateRecord = findViewById<android.widget.Button>(R.id.btnCreateRecord)
         val btnTransferOwnership = findViewById<android.widget.Button>(R.id.btnTransferOwnership)
+
+        if (currentKey == null) {
+            adapter.submitList(emptyList())
+            emptyStateView?.visibility = android.view.View.VISIBLE
+            emptyStateText?.text = "No key selected. Please set up or select a key."
+            btnCreateRecord?.setOnClickListener {
+                Toast.makeText(this, "Please select a key before creating a record.", Toast.LENGTH_SHORT).show()
+            }
+            btnTransferOwnership?.setOnClickListener {
+                Toast.makeText(this, "Please select a key before transferring ownership.", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+
+        val currentPubkey = currentKey.publicKey
+        val db = MaintenanceRecordDatabase.getDatabase(applicationContext)
+        val eventDao = db.localNostrEventDao()
+        val eventRepo = LocalNostrEventRepository(eventDao)
 
         lifecycleScope.launch {
             val events = eventRepo.getAllByPubkey(currentPubkey)

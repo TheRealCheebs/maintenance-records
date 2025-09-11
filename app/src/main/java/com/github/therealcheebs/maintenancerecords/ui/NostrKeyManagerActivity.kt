@@ -41,11 +41,12 @@ class NostrKeyManagerActivity : AppCompatActivity() {
         binding = ActivityNostrKeyManagerBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        val showBack = NostrClient.getAllKeys().isNotEmpty()
         ToolbarHelper.setupToolbar(
             activity = this,
             toolbar = binding.toolbar,
             title = "Nostr Key Management",
-            showBackButton = true,
+            showBackButton = showBack,
             onMenuItemClick = { menuItem ->
                 when (menuItem.itemId) {
                     R.id.action_select_key -> {
@@ -63,6 +64,8 @@ class NostrKeyManagerActivity : AppCompatActivity() {
                                 intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
                                 startActivity(intent)
                                 finish()
+                            },
+                            onDialogDismissed = {
                             }
                         )
                         true
@@ -190,10 +193,13 @@ class NostrKeyManagerActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     try {
                         val alias = NostrClient.generateNewKey(nickname)
+                        NostrClient.setCurrentKey(alias)
+                        NostrClient.loadKeyPairForCurrentKey()
                         loadKeys()
                         Toast.makeText(this@NostrKeyManagerActivity, "New key generated successfully", Toast.LENGTH_SHORT).show()
                         val intent = Intent(this@NostrKeyManagerActivity, MainActivity::class.java)
                         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                        intent.putExtra("key_just_created", true)
                         startActivity(intent)
                         finish()
                     } catch (e: Exception) {
@@ -215,11 +221,53 @@ class NostrKeyManagerActivity : AppCompatActivity() {
     private fun deleteKey(keyInfo: KeyInfo) {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Delete Key")
-            .setMessage("Are you sure you want to delete '${keyInfo.name}'? This action cannot be undone.")
+            .setMessage("Are you sure you want to delete '${keyInfo.name}'? This action cannot be undone. All local records for this key will also be deleted.")
             .setPositiveButton("Delete") { _, _ ->
-                NostrClient.deleteKey(keyInfo.alias)
-                loadKeys()
-                Toast.makeText(this, "Key deleted", Toast.LENGTH_SHORT).show()
+                lifecycleScope.launch {
+                    // Delete all local records for this key
+                    val db = com.github.therealcheebs.maintenancerecords.data.MaintenanceRecordDatabase.getDatabase(applicationContext)
+                    val eventDao = db.localNostrEventDao()
+                    val eventRepo = com.github.therealcheebs.maintenancerecords.data.LocalNostrEventRepository(eventDao)
+                    val pubkey = keyInfo.publicKey
+                    val events = eventRepo.getAllByPubkey(pubkey)
+                    for (event in events) {
+                        eventRepo.delete(event)
+                    }
+                    NostrClient.deleteKey(keyInfo.alias)
+                    loadKeys()
+                    // Update toolbar to hide back button if no keys remain
+                    val showBack = NostrClient.getAllKeys().isNotEmpty()
+                    ToolbarHelper.setupToolbar(
+                        activity = this@NostrKeyManagerActivity,
+                        toolbar = binding.toolbar,
+                        title = "Nostr Key Management",
+                        showBackButton = showBack,
+                        onMenuItemClick = { menuItem ->
+                            when (menuItem.itemId) {
+                                R.id.action_select_key -> {
+                                    showKeySelectionDialog(this@NostrKeyManagerActivity,
+                                        onKeySelected = { keyInfo ->
+                                            NostrClient.setCurrentKey(keyInfo.alias)
+                                            NostrClient.loadKeyPairForCurrentKey()
+                                            loadKeys()
+                                            Toast.makeText(this@NostrKeyManagerActivity, "Selected: ${keyInfo.name}", Toast.LENGTH_SHORT).show()
+                                        },
+                                        onManageKeys = {
+                                            val intent = Intent(this@NostrKeyManagerActivity, MainActivity::class.java)
+                                            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            startActivity(intent)
+                                            finish()
+                                        },
+                                        onDialogDismissed = {}
+                                    )
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
+                    )
+                    Toast.makeText(this@NostrKeyManagerActivity, "Key and all local records deleted", Toast.LENGTH_SHORT).show()
+                }
             }
             .setNegativeButton("Cancel", null)
             .show()
