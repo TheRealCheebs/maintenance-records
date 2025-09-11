@@ -41,11 +41,12 @@ class NostrKeyManagerActivity : AppCompatActivity() {
         binding = ActivityNostrKeyManagerBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        val showBack = NostrClient.getAllKeys().isNotEmpty()
         ToolbarHelper.setupToolbar(
             activity = this,
             toolbar = binding.toolbar,
             title = "Nostr Key Management",
-            showBackButton = true,
+            showBackButton = showBack,
             onMenuItemClick = { menuItem ->
                 when (menuItem.itemId) {
                     R.id.action_select_key -> {
@@ -192,10 +193,13 @@ class NostrKeyManagerActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     try {
                         val alias = NostrClient.generateNewKey(nickname)
+                        NostrClient.setCurrentKey(alias)
+                        NostrClient.loadKeyPairForCurrentKey()
                         loadKeys()
                         Toast.makeText(this@NostrKeyManagerActivity, "New key generated successfully", Toast.LENGTH_SHORT).show()
                         val intent = Intent(this@NostrKeyManagerActivity, MainActivity::class.java)
                         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                        intent.putExtra("key_just_created", true)
                         startActivity(intent)
                         finish()
                     } catch (e: Exception) {
