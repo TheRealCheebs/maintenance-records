@@ -25,6 +25,10 @@ import android.view.Menu
 
 
 class MainActivity : AppCompatActivity() {
+    override fun onResume() {
+        super.onResume()
+        loadRecordsForCurrentKey()
+    }
     private val MIN_BACKOFF_MILLIS = 10_000L // 10 seconds
 
     private lateinit var binding: ActivityMainBinding
