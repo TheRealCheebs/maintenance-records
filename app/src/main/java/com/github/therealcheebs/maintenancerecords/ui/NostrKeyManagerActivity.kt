@@ -217,11 +217,22 @@ class NostrKeyManagerActivity : AppCompatActivity() {
     private fun deleteKey(keyInfo: KeyInfo) {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Delete Key")
-            .setMessage("Are you sure you want to delete '${keyInfo.name}'? This action cannot be undone.")
+            .setMessage("Are you sure you want to delete '${keyInfo.name}'? This action cannot be undone. All local records for this key will also be deleted.")
             .setPositiveButton("Delete") { _, _ ->
-                NostrClient.deleteKey(keyInfo.alias)
-                loadKeys()
-                Toast.makeText(this, "Key deleted", Toast.LENGTH_SHORT).show()
+                lifecycleScope.launch {
+                    // Delete all local records for this key
+                    val db = com.github.therealcheebs.maintenancerecords.data.MaintenanceRecordDatabase.getDatabase(applicationContext)
+                    val eventDao = db.localNostrEventDao()
+                    val eventRepo = com.github.therealcheebs.maintenancerecords.data.LocalNostrEventRepository(eventDao)
+                    val pubkey = keyInfo.publicKey
+                    val events = eventRepo.getAllByPubkey(pubkey)
+                    for (event in events) {
+                        eventRepo.delete(event)
+                    }
+                    NostrClient.deleteKey(keyInfo.alias)
+                    loadKeys()
+                    Toast.makeText(this@NostrKeyManagerActivity, "Key and all local records deleted", Toast.LENGTH_SHORT).show()
+                }
             }
             .setNegativeButton("Cancel", null)
             .show()
