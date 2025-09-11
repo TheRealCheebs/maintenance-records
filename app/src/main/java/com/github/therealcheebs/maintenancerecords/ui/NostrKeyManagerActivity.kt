@@ -235,6 +235,37 @@ class NostrKeyManagerActivity : AppCompatActivity() {
                     }
                     NostrClient.deleteKey(keyInfo.alias)
                     loadKeys()
+                    // Update toolbar to hide back button if no keys remain
+                    val showBack = NostrClient.getAllKeys().isNotEmpty()
+                    ToolbarHelper.setupToolbar(
+                        activity = this@NostrKeyManagerActivity,
+                        toolbar = binding.toolbar,
+                        title = "Nostr Key Management",
+                        showBackButton = showBack,
+                        onMenuItemClick = { menuItem ->
+                            when (menuItem.itemId) {
+                                R.id.action_select_key -> {
+                                    showKeySelectionDialog(this@NostrKeyManagerActivity,
+                                        onKeySelected = { keyInfo ->
+                                            NostrClient.setCurrentKey(keyInfo.alias)
+                                            NostrClient.loadKeyPairForCurrentKey()
+                                            loadKeys()
+                                            Toast.makeText(this@NostrKeyManagerActivity, "Selected: ${keyInfo.name}", Toast.LENGTH_SHORT).show()
+                                        },
+                                        onManageKeys = {
+                                            val intent = Intent(this@NostrKeyManagerActivity, MainActivity::class.java)
+                                            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            startActivity(intent)
+                                            finish()
+                                        },
+                                        onDialogDismissed = {}
+                                    )
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
+                    )
                     Toast.makeText(this@NostrKeyManagerActivity, "Key and all local records deleted", Toast.LENGTH_SHORT).show()
                 }
             }
