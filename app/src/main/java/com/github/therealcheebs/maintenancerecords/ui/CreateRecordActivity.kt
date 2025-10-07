@@ -22,11 +22,11 @@ import java.util.*
 import android.view.Menu
 
 class CreateRecordActivity : AppCompatActivity() {
-    
+
     private lateinit var binding: ActivityCreateRecordBinding
     private val calendar = Calendar.getInstance()
     private val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityCreateRecordBinding.inflate(layoutInflater)
@@ -53,17 +53,17 @@ class CreateRecordActivity : AppCompatActivity() {
         setupClickListeners()
         setDefaultValues()
     }
-    
+
 
     private fun setupDateField() {
         // Set current date as default
         updateDateField()
-        
+
         // Make date field clickable
         binding.editDatePerformed.setOnClickListener {
             showDatePicker()
         }
-        
+
         // Make date field focusable
         binding.editDatePerformed.setOnFocusChangeListener { _, hasFocus ->
             if (hasFocus) {
@@ -71,7 +71,7 @@ class CreateRecordActivity : AppCompatActivity() {
             }
         }
     }
-    
+
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
         return true
@@ -80,15 +80,15 @@ class CreateRecordActivity : AppCompatActivity() {
     private fun setDefaultValues() {
         // Set current date
         updateDateField()
-        
+
         // Clear focus from date field
         binding.editDatePerformed.clearFocus()
     }
-    
+
     private fun updateDateField() {
         binding.editDatePerformed.setText(dateFormat.format(calendar.time))
     }
-    
+
     private fun showDatePicker() {
         val dateSetListener = DatePickerDialog.OnDateSetListener { _, year, month, dayOfMonth ->
             calendar.set(Calendar.YEAR, year)
@@ -96,7 +96,7 @@ class CreateRecordActivity : AppCompatActivity() {
             calendar.set(Calendar.DAY_OF_MONTH, dayOfMonth)
             updateDateField()
         }
-        
+
         DatePickerDialog(
             this,
             dateSetListener,
@@ -105,7 +105,7 @@ class CreateRecordActivity : AppCompatActivity() {
             calendar.get(Calendar.DAY_OF_MONTH)
         ).show()
     }
-    
+
     private fun setupClickListeners() {
         binding.btnSave.setOnClickListener {
             saveRecord()
@@ -119,7 +119,7 @@ class CreateRecordActivity : AppCompatActivity() {
         onBackPressed()
         return true
     }
-    
+
     private fun saveRecord() {
         // Get values from input fields
         val itemId = binding.editItemId.text.toString().trim()
@@ -128,26 +128,26 @@ class CreateRecordActivity : AppCompatActivity() {
         val costString = binding.editCost.text.toString().trim()
         val mileageString = binding.editMileage.text.toString().trim()
         val notes = binding.editNotes.text.toString().trim()
-        
+
         // Validate required fields
         if (itemId.isBlank()) {
             binding.editItemId.error = "Item ID is required"
             binding.editItemId.requestFocus()
             return
         }
-        
+
         if (description.isBlank()) {
             binding.editDescription.error = "Description is required"
             binding.editDescription.requestFocus()
             return
         }
-        
+
         if (technician.isBlank()) {
             binding.editTechnician.error = "Technician is required"
             binding.editTechnician.requestFocus()
             return
         }
-        
+
         // Parse cost
         val cost = if (costString.isBlank()) {
             0.0
@@ -158,7 +158,7 @@ class CreateRecordActivity : AppCompatActivity() {
                 return
             }
         }
-        
+
         // Parse mileage (optional)
         val mileage = if (mileageString.isBlank()) {
             null
@@ -169,7 +169,7 @@ class CreateRecordActivity : AppCompatActivity() {
                 return
             }
         }
-        
+
         // Get current user's public key
         val currentKey = NostrClient.getCurrentKeyInfo()
         if (currentKey == null) {
@@ -177,7 +177,7 @@ class CreateRecordActivity : AppCompatActivity() {
             return
         }
         val currentPubkey = currentKey.publicKey
-        
+
         // Create MaintenanceRecord object
         val record = MaintenanceRecord(
             itemId = itemId,
@@ -191,7 +191,7 @@ class CreateRecordActivity : AppCompatActivity() {
             createdAt = System.currentTimeMillis() / 1000L, // Current time as Unix timestamp
             updatedAt = System.currentTimeMillis() / 1000L // Current time as Unix timestamp
         )
-        
+
         // Save the record
         lifecycleScope.launch {
             try {

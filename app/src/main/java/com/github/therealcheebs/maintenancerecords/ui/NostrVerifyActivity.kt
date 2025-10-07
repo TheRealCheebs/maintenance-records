@@ -1,11 +1,13 @@
 package com.github.therealcheebs.maintenancerecords.ui
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.github.therealcheebs.maintenancerecords.databinding.ActivityNostrVerifyBinding
 import com.github.therealcheebs.maintenancerecords.nostr.NostrClient
 import kotlinx.coroutines.launch
+import com.github.therealcheebs.maintenancerecords.R
 
 class NostrVerifyActivity : AppCompatActivity() {
     private lateinit var binding: ActivityNostrVerifyBinding
@@ -15,6 +17,24 @@ class NostrVerifyActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityNostrVerifyBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        ToolbarHelper.setupToolbar(
+            activity = this,
+            toolbar = binding.toolbar,
+            title = "Verify Record",
+            showBackButton = true,
+            onMenuItemClick = { menuItem ->
+                when (menuItem.itemId) {
+                    R.id.action_key_manager -> {
+                        val intent = Intent(this, NostrKeyManagerActivity::class.java)
+                        startActivity(intent)
+                        true
+                    }
+                    // should there be action_select_key here?
+                    else -> false
+                }
+           }
+        )
 
         eventId = intent.getStringExtra("EVENT_ID") ?: run {
             finish()

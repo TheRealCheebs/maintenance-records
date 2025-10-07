@@ -545,6 +545,7 @@ object NostrClient {
 
     private fun getDefaultRelays(): List<String> {
         return listOf(
+            "wss://localhost:7000"
             // "wss://relay.nostr.example",
             // "wss://nostr-relay.example",
             // "wss://relay.damus.io"
